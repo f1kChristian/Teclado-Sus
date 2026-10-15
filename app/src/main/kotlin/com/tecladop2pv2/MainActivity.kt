@@ -1,67 +1,290 @@
 package com.tecladop2pv2
 
+import android.content.Intent
 import android.os.Bundle
+import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+
+private val Fundo = Color(0xFF121212)
+private val FundoTopo = Color(0xFF222222)
+private val TextoPrincipal = Color(0xFFF5F5F5)
+private val TextoSecundario = Color(0xFFAAAAAA)
+private val Azul = Color(0xFF9DBDFF)
 
 class MainActivity : ComponentActivity() {
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
         setContent {
-            MaterialTheme {
-                Surface(modifier = Modifier.fillMaxSize()) {
-                    PairingScreen(modifier = Modifier)
+            MaterialTheme(
+                colorScheme = darkColorScheme(
+                    background = Fundo,
+                    surface = Fundo,
+                    primary = Azul,
+                    onBackground = TextoPrincipal,
+                    onSurface = TextoPrincipal
+                )
+            ) {
+                TelaConfiguracoes(
+                    abrirSeletorTeclado = {
+                        val intent = Intent("android.settings.INPUT_METHOD_SETTINGS")
+                        startActivity(intent)
+                    }
+                )
+            }
+        }
+    }
+}
+
+private data class OpcaoConfiguracao(
+    val titulo: String,
+    val descricao: String = "",
+    val icone: String
+)
+
+@Composable
+private fun TelaConfiguracoes(
+    abrirSeletorTeclado: () -> Unit
+) {
+    var telaSelecionada by remember { mutableStateOf<String?>(null) }
+
+    val opcoes = listOf(
+        OpcaoConfiguracao("Conta", "Configurações do usuário", "●"),
+        OpcaoConfiguracao("Idiomas", "Idioma e layout do teclado", "◎"),
+        OpcaoConfiguracao("Temas", "Cores e aparência", "◉"),
+        OpcaoConfiguracao("Digitação", "Maiúsculas e comportamento das teclas", "T"),
+        OpcaoConfiguracao("Emoji", "Configurações de emojis", "☺"),
+        OpcaoConfiguracao("Entrada avançada", "Recursos adicionais", "♩"),
+        OpcaoConfiguracao("Layout e teclas", "Personalizar as teclas", "▦"),
+        OpcaoConfiguracao("Som e vibração", "Feedback ao pressionar teclas", "♫"),
+        OpcaoConfiguracao("Privacidade", "Informações sobre seus dados", "◇"),
+        OpcaoConfiguracao("Ajuda e Feedback", "Ajuda sobre o aplicativo", "?"),
+        OpcaoConfiguracao("Sobre o Teclado P2P V2", "Versão e informações", "ⓘ")
+    )
+
+    if (telaSelecionada != null) {
+        TelaOpcao(
+            titulo = telaSelecionada!!,
+            voltar = { telaSelecionada = null }
+        )
+        return
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Fundo)
+    ) {
+        Column(modifier = Modifier.fillMaxSize()) {
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(FundoTopo)
+                    .height(76.dp)
+                    .padding(horizontal = 24.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "Teclado P2P V2",
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = TextoPrincipal
+                )
+            }
+
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(bottom = 90.dp)
+            ) {
+                item {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 24.dp, vertical = 24.dp)
+                    ) {
+                        Text(
+                            text = "Configurações do teclado",
+                            fontSize = 14.sp,
+                            color = TextoSecundario
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = "Personalize sua experiência de digitação.",
+                            fontSize = 17.sp,
+                            color = TextoPrincipal
+                        )
+                    }
                 }
+
+                items(opcoes) { opcao ->
+                    LinhaConfiguracao(
+                        opcao = opcao,
+                        aoClicar = { telaSelecionada = opcao.titulo }
+                    )
+                }
+            }
+        }
+
+        FloatingActionButton(
+            onClick = abrirSeletorTeclado,
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .padding(20.dp),
+            shape = RoundedCornerShape(20.dp),
+            containerColor = Azul,
+            contentColor = Color(0xFF101820)
+        ) {
+            Text(
+                text = "⌨",
+                fontSize = 28.sp
+            )
+        }
+    }
+}
+
+@Composable
+private fun LinhaConfiguracao(
+    opcao: OpcaoConfiguracao,
+    aoClicar: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = aoClicar)
+            .heightIn(min = 76.dp)
+            .padding(horizontal = 24.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            modifier = Modifier
+                .size(42.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                text = opcao.icone,
+                fontSize = 28.sp,
+                color = TextoPrincipal
+            )
+        }
+
+        Spacer(modifier = Modifier.width(24.dp))
+
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = opcao.titulo,
+                fontSize = 15.sp,
+                fontWeight = FontWeight.Medium,
+                color = TextoPrincipal
+            )
+
+            if (opcao.descricao.isNotBlank()) {
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = opcao.descricao,
+                    fontSize = 12.sp,
+                    color = TextoSecundario
+                )
             }
         }
     }
 }
 
 @Composable
-private fun PairingScreen(modifier: Modifier) {
+private fun TelaOpcao(
+    titulo: String,
+    voltar: () -> Unit
+) {
     Column(
-        modifier = modifier
+        modifier = Modifier
             .fillMaxSize()
-            .padding(20.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp)
+            .background(Fundo)
     ) {
-        Text(
-            text = "Desconectado",
-            color = Color(0xFFB3261E),
-            style = MaterialTheme.typography.titleLarge
-        )
-
-        Text("O estado também é anunciado por leitores de tela; a cor não é o único indicador.")
-
-        Text(
-            "Pareamento por código e QR ainda não está habilitado porque não há servidor de sinalização HTTPS/WSS configurado. Nenhuma conexão é simulada e nenhum texto sai deste dispositivo."
-        )
-
-        OutlinedButton(
-            onClick = {},
-            enabled = false,
-            modifier = Modifier.fillMaxWidth()
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(FundoTopo)
+                .height(64.dp)
+                .clickable(onClick = voltar)
+                .padding(horizontal = 20.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Text("Gerar código / QR indisponível")
+            Text(
+                text = "‹",
+                fontSize = 32.sp,
+                color = TextoPrincipal
+            )
+
+            Spacer(modifier = Modifier.width(20.dp))
+
+            Text(
+                text = titulo,
+                fontSize = 18.sp,
+                color = TextoPrincipal
+            )
         }
 
+        Spacer(modifier = Modifier.height(24.dp))
+
         Text(
-            text = "Para habilitar: implante um backend de sinalização temporária autenticado, configure HTTPS/WSS e TURN com credenciais efêmeras. Nunca coloque segredos no APK.",
-            style = MaterialTheme.typography.bodySmall
+            text = titulo,
+            modifier = Modifier.padding(horizontal = 24.dp),
+            fontSize = 22.sp,
+            fontWeight = FontWeight.Bold,
+            color = TextoPrincipal
+        )
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        Text(
+            text = when (titulo) {
+                "Idiomas" ->
+                    "As opções de idioma e layout serão implementadas aqui."
+                "Temas" ->
+                    "A personalização de cores e aparência será implementada aqui."
+                "Digitação" ->
+                    "As preferências de digitação serão implementadas aqui."
+                "Emoji" ->
+                    "As opções de emoji serão implementadas aqui."
+                "Entrada avançada" ->
+                    "Os recursos adicionais serão implementados aqui."
+                "Layout e teclas" ->
+                    "A personalização do layout será implementada aqui."
+                "Som e vibração" ->
+                    "As opções de som e vibração serão implementadas aqui."
+                "Privacidade" ->
+                    "Aqui ficarão as informações de privacidade do teclado."
+                "Conta" ->
+                    "As opções de conta serão implementadas aqui."
+                "Ajuda e Feedback" ->
+                    "As informações de ajuda serão adicionadas aqui."
+                "Sobre o Teclado P2P V2" ->
+                    "Teclado P2P V2\nVersão 1.0"
+                else ->
+                    "Configurações disponíveis em breve."
+            },
+            modifier = Modifier.padding(horizontal = 24.dp),
+            fontSize = 15.sp,
+            color = TextoSecundario,
+            lineHeight = 24.sp
         )
     }
 }
