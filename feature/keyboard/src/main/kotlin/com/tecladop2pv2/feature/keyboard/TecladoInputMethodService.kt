@@ -17,7 +17,9 @@ class TecladoInputMethodService : InputMethodService() {
     private val fundo = Color.rgb(35, 36, 40)
     private val corTecla = Color.rgb(65, 67, 73)
     private val corEspecial = Color.rgb(85, 91, 105)
-
+    private var maiusculas = false
+    private var simbolos = false
+    
     override fun onCreateInputView(): View {
         val teclado = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
