@@ -24,7 +24,7 @@ class TecladoApplication : Application() {
             prefs.getString("id", null) ?: UUID.randomUUID().toString().also { prefs.edit().putString("id", it).apply() }
         }
         history = RoomHistoryRepository(database.historyDao(), KeystoreTextCipher(), deviceId)
-        customization = CustomizationRepository(this)
+        customization = CustomizationRepository()
         KeyboardRuntime.historyRepository = history
     }
 }
