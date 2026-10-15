@@ -1,3 +1,4 @@
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -7,6 +8,7 @@ plugins {
 android {
     namespace = "com.tecladop2pv2"
     compileSdk = 35
+
     defaultConfig {
         applicationId = "com.tecladop2pv2"
         minSdk = 26
@@ -14,8 +16,19 @@ android {
         versionCode = 1
         versionName = "1.0.0"
     }
-    buildFeatures { compose = true }
-    packaging { resources.excludes += "/META-INF/{AL2.0,LGPL2.1}" }
+
+    buildFeatures {
+        compose = true
+    }
+
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+
+    packaging {
+        resources.excludes += "/META-INF/{AL2.0,LGPL2.1}"
+    }
 }
 
 dependencies {
@@ -30,6 +43,7 @@ dependencies {
     implementation(project(":sync"))
     implementation(project(":webrtc"))
     implementation(project(":signaling"))
+
     implementation(platform(libs.compose.bom))
     implementation(libs.compose.ui)
     implementation(libs.compose.material3)
@@ -38,5 +52,9 @@ dependencies {
     implementation(libs.lifecycle.runtime.compose)
     implementation(libs.lifecycle.viewmodel.compose)
     implementation(libs.coroutines.android)
+
+    implementation("androidx.room:room-runtime:2.6.1")
+    implementation("androidx.room:room-ktx:2.6.1")
+
     debugImplementation(libs.compose.ui.tooling)
 }
