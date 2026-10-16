@@ -32,4 +32,37 @@ interface HistoryDao {
 
     @Transaction
     suspend fun deleteAll(time: Long) = markAllDeleted(time)
+
+    @Query("""
+    SELECT * FROM history_records
+    WHERE deletedAt IS NULL
+      AND syncState IN ('LOCAL_ONLY', 'QUEUED', 'RETRY_WAIT')
+    ORDER BY createdAt ASC
+""")
+suspend fun getPendingRecords(): List<HistoryRecordEntity>
+
+@Query("""
+    UPDATE history_records
+    SET syncState = :state,
+        lastAttemptAt = :attemptAt,
+        attemptCount = attemptCount + 1,
+        lastErrorCode = :errorCode
+    WHERE recordId = :recordId
+      AND deletedAt IS NULL
+""")
+suspend fun updateSyncState(
+    recordId: String,
+    state: com.tecladop2pv2.core.model.SyncState,
+    attemptAt: Long?,
+    errorCode: String?
+)
+
+@Query("""
+    SELECT * FROM history_records
+    WHERE recordId = :recordId
+      AND deletedAt IS NULL
+    LIMIT 1
+""")
+suspend fun getById(recordId: String): HistoryRecordEntity?
+    
 }
