@@ -2,6 +2,14 @@ package com.tecladop2pv2
 
 import android.content.Intent
 import android.os.Bundle
+import androidx.compose.foundation.Image
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.runtime.rememberCoroutineScope
+import com.tecladop2pv2.signaling.PairingSession
+import com.tecladop2pv2.signaling.UnconfiguredSignalingClient
+import kotlinx.coroutines.launch
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
