@@ -3,6 +3,17 @@ plugins {
     id("org.jetbrains.kotlin.android")
 }
 
-dependencies { implementation(libs.webrtc); implementation(project(":core:model")) }
+android {
+    namespace = "com.tecladop2pv2.webrtc"
+    compileSdk = 35
 
-android { namespace = "com.tecladop2pv2.webrtc"; compileSdk = 35; defaultConfig { minSdk = 26 } }
+    defaultConfig {
+        minSdk = 26
+    }
+}
+
+dependencies {
+    implementation(libs.webrtc)
+    implementation(project(":core:model"))
+    implementation(libs.coroutines.android)
+}
