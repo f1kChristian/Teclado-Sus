@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "263051028799",
+    "project_id": "tecladop2p",
+    "storage_bucket": "tecladop2p.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:263051028799:android:6ded373a31c6cb70e3cb8a",
+        "android_client_info": {
+          "package_name": "com.tecladop2pv2"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyABVizk5Mn8BHSVBHCSS1B38Bj2gw3bWfI"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
