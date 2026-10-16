@@ -33,6 +33,7 @@ android {
 
 dependencies {
     implementation(project(":core:model"))
+    implementation("com.google.zxing:core:3.5.3")
     implementation(project(":core:database"))
     implementation(project(":core:security"))
     implementation(project(":feature:keyboard"))
