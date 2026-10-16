@@ -1,3 +1,4 @@
+
 package com.tecladop2pv2.sync
 
 import android.content.Context
@@ -15,20 +16,23 @@ object SyncScheduler {
     private const val UNIQUE_WORK_NAME = "teclado_p2p_sync"
     private const val PERIODIC_WORK_NAME = "teclado_p2p_periodic_sync"
 
-    private fun networkConstraints() = Constraints.Builder()
-        .setRequiredNetworkType(NetworkType.CONNECTED)
-        .build()
+    private fun networkConstraints(): Constraints {
+        return Constraints.Builder()
+            .setRequiredNetworkType(NetworkType.CONNECTED)
+            .build()
+    }
 
     fun enqueue(context: Context) {
         val request = OneTimeWorkRequestBuilder<SyncWorker>()
             .setConstraints(networkConstraints())
             .build()
 
-        WorkManager.getInstance(context).enqueueUniqueWork(
-            UNIQUE_WORK_NAME,
-            ExistingWorkPolicy.KEEP,
-            request
-        )
+        WorkManager.getInstance(context.applicationContext)
+            .enqueueUniqueWork(
+                UNIQUE_WORK_NAME,
+                ExistingWorkPolicy.KEEP,
+                request
+            )
     }
 
     fun schedulePeriodic(context: Context) {
@@ -39,10 +43,11 @@ object SyncScheduler {
             .setConstraints(networkConstraints())
             .build()
 
-        WorkManager.getInstance(context).enqueueUniquePeriodicWork(
-            PERIODIC_WORK_NAME,
-            ExistingPeriodicWorkPolicy.KEEP,
-            request
-        )
+        WorkManager.getInstance(context.applicationContext)
+            .enqueueUniquePeriodicWork(
+                PERIODIC_WORK_NAME,
+                ExistingPeriodicWorkPolicy.KEEP,
+                request
+            )
     }
 }
