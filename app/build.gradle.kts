@@ -49,9 +49,11 @@ dependencies {
     implementation(project(":feature:customization"))
     implementation(project(":feature:pairing"))
     implementation(project(":sync"))
+    implementation(platform("com.google.firebase:firebase-bom:34.19.0"))
+    implementation("com.google.firebase:firebase-database")
+    implementation("com.google.firebase:firebase-auth")
     implementation(project(":webrtc"))
     implementation(project(":signaling"))
-
     implementation(platform(libs.compose.bom))
     implementation(libs.compose.ui)
     implementation(libs.compose.material3)
