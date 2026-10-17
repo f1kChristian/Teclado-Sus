@@ -33,6 +33,7 @@ android {
 
 dependencies {
     implementation(project(":core:model"))
+    implementation("com.google.guava:guava:33.3.1-android")
     implementation(project(":core:database"))
     implementation(project(":core:security"))
     implementation(project(":feature:keyboard"))
