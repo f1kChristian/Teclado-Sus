@@ -30,18 +30,9 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
-import com.google.zxing.BarcodeFormat
-import com.google.zxing.DecodeHintType
-import com.google.zxing.MultiFormatReader
-import com.google.zxing.PlanarYUVLuminanceSource
-import com.google.zxing.BinaryBitmap
-import com.google.zxing.common.HybridBinarizer
-import com.google.zxing.qrcode.QRCodeReader
 import com.tecladop2pv2.signaling.FirebaseSignalingClient
 import com.tecladop2pv2.signaling.PairingSession
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import java.text.DateFormat
 import java.util.Date
 
@@ -50,7 +41,6 @@ private val FundoTopo = Color(0xFF222222)
 private val TextoPrincipal = Color(0xFFF5F5F5)
 private val TextoSecundario = Color(0xFFAAAAAA)
 private val Azul = Color(0xFF9DBDFF)
-private val Verde = Color(0xFF81C784)
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -147,7 +137,10 @@ private fun TelaConfiguracoes(
             ) {
                 TextButton(
                     onClick = { mostrarPareamento = true },
-                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
+                    contentPadding = PaddingValues(
+                        horizontal = 8.dp,
+                        vertical = 4.dp
+                    )
                 ) {
                     Text(
                         "QR",
@@ -187,14 +180,19 @@ private fun TelaConfiguracoes(
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 24.dp, vertical = 24.dp)
+                            .padding(
+                                horizontal = 24.dp,
+                                vertical = 24.dp
+                            )
                     ) {
                         Text(
                             "Configurações do teclado",
                             fontSize = 14.sp,
                             color = TextoSecundario
                         )
+
                         Spacer(modifier = Modifier.height(8.dp))
+
                         Text(
                             "Personalize sua experiência de digitação.",
                             fontSize = 17.sp,
@@ -216,23 +214,38 @@ private fun TelaConfiguracoes(
                                 modifier = Modifier.padding(18.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Text("▦", fontSize = 34.sp, color = Azul)
+                                Text(
+                                    "▦",
+                                    fontSize = 34.sp,
+                                    color = Azul
+                                )
+
                                 Spacer(modifier = Modifier.width(16.dp))
-                                Column(modifier = Modifier.weight(1f)) {
+
+                                Column(
+                                    modifier = Modifier.weight(1f)
+                                ) {
                                     Text(
                                         "Conectar dispositivo",
                                         fontSize = 16.sp,
                                         fontWeight = FontWeight.Bold,
                                         color = TextoPrincipal
                                     )
+
                                     Spacer(modifier = Modifier.height(4.dp))
+
                                     Text(
                                         "Leia um QR Code ou digite o código de pareamento.",
                                         fontSize = 12.sp,
                                         color = TextoSecundario
                                     )
                                 }
-                                Text("›", fontSize = 30.sp, color = Azul)
+
+                                Text(
+                                    "›",
+                                    fontSize = 30.sp,
+                                    color = Azul
+                                )
                             }
                         }
                     }
@@ -241,7 +254,9 @@ private fun TelaConfiguracoes(
                 items(opcoes) { opcao ->
                     LinhaConfiguracao(
                         opcao = opcao,
-                        aoClicar = { telaSelecionada = opcao.titulo }
+                        aoClicar = {
+                            telaSelecionada = opcao.titulo
+                        }
                     )
                 }
             }
@@ -273,7 +288,10 @@ private fun TelaPareamento(
     var carregando by remember { mutableStateOf(false) }
     var erro by remember { mutableStateOf<String?>(null) }
 
-    val qrBitmap = remember(sessao?.oneTimeCode, sessao?.sessionId) {
+    val qrBitmap = remember(
+        sessao?.oneTimeCode,
+        sessao?.sessionId
+    ) {
         sessao?.let {
             runCatching {
                 gerarQrCode(
@@ -321,7 +339,10 @@ private fun TelaPareamento(
                     contentDescription = "QR Code de pareamento",
                     modifier = Modifier
                         .size(240.dp)
-                        .background(Color.White, RoundedCornerShape(12.dp))
+                        .background(
+                            Color.White,
+                            RoundedCornerShape(12.dp)
+                        )
                         .padding(8.dp),
                     contentScale = ContentScale.Fit
                 )
@@ -337,7 +358,10 @@ private fun TelaPareamento(
 
                 sessao?.expiresAtMillis?.let { expiracao ->
                     Text(
-                        "Expira em ${DateFormat.getTimeInstance().format(Date(expiracao))}",
+                        "Expira em ${
+                            DateFormat.getTimeInstance()
+                                .format(Date(expiracao))
+                        }",
                         color = TextoSecundario,
                         fontSize = 12.sp
                     )
@@ -346,11 +370,17 @@ private fun TelaPareamento(
                 Box(
                     modifier = Modifier
                         .size(240.dp)
-                        .background(Color.White, RoundedCornerShape(12.dp)),
+                        .background(
+                            Color.White,
+                            RoundedCornerShape(12.dp)
+                        ),
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
-                        if (carregando) "Criando sessão..." else "QR Code não gerado",
+                        when {
+                            carregando -> "Criando sessão..."
+                            else -> "QR Code não gerado"
+                        },
                         color = Color.DarkGray,
                         textAlign = TextAlign.Center
                     )
@@ -366,6 +396,8 @@ private fun TelaPareamento(
                     textAlign = TextAlign.Center,
                     fontSize = 13.sp
                 )
+
+                Spacer(modifier = Modifier.height(12.dp))
             }
 
             Button(
@@ -379,20 +411,33 @@ private fun TelaPareamento(
                         try {
                             sessao = cliente.createSession()
                         } catch (e: Exception) {
-                            erro = "Falha ao criar sessão: ${e.message ?: "verifique o Firebase"}"
+                            erro = when (e.message) {
+                                "FIREBASE_AUTH_REQUIRED" ->
+                                    "Autenticação Firebase necessária."
+
+                                else ->
+                                    "Falha ao criar sessão: ${
+                                        e.message ?: "verifique a configuração Firebase"
+                                    }"
+                            }
                         } finally {
                             carregando = false
                         }
                     }
                 }
             ) {
-                Text(if (carregando) "Criando..." else "Criar QR Code")
+                Text(
+                    if (carregando) "Criando..." else "Criar sessão e QR Code"
+                )
             }
 
-            Spacer(modifier = Modifier.height(10.dp))
+            Spacer(modifier = Modifier.height(12.dp))
 
             OutlinedButton(onClick = abrirLeitor) {
-                Text("Ler QR Code de outro dispositivo", color = Azul)
+                Text(
+                    "Ler QR Code de outro dispositivo",
+                    color = Azul
+                )
             }
 
             Spacer(modifier = Modifier.height(8.dp))
@@ -409,22 +454,27 @@ private fun TelaLerQrCode(
     voltar: () -> Unit
 ) {
     val context = LocalContext.current
-    val scope = rememberCoroutineScope()
 
     var codigo by remember { mutableStateOf("") }
-    var mensagem by remember { mutableStateOf("Aponte a câmera para o QR Code do outro dispositivo.") }
+    var mensagem by remember {
+        mutableStateOf(
+            "Digite o código de seis dígitos exibido no outro dispositivo."
+        )
+    }
     var erro by remember { mutableStateOf(false) }
     var processando by remember { mutableStateOf(false) }
-    var mostrarCamera by remember { mutableStateOf(false) }
 
     val permissaoCamera = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { concedida ->
-        if (concedida) {
-            mostrarCamera = true
-        } else {
+        if (!concedida) {
             erro = true
-            mensagem = "Permissão da câmera negada. Permita o acesso nas configurações do Android."
+            mensagem =
+                "Permissão da câmera negada. Permita o acesso nas configurações do Android."
+        } else {
+            erro = false
+            mensagem =
+                "Permissão concedida. A leitura automática da câmera ainda não está implementada."
         }
     }
 
@@ -442,7 +492,7 @@ private fun TelaLerQrCode(
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Text(
-                "Leia o QR Code",
+                "Conectar dispositivo",
                 fontSize = 25.sp,
                 fontWeight = FontWeight.Bold,
                 color = TextoPrincipal
@@ -451,7 +501,7 @@ private fun TelaLerQrCode(
             Spacer(modifier = Modifier.height(8.dp))
 
             Text(
-                "Use a câmera para ler o código exibido no outro celular.",
+                "Digite o código exibido no outro celular para procurar a sessão.",
                 fontSize = 14.sp,
                 color = TextoSecundario,
                 textAlign = TextAlign.Center
@@ -462,51 +512,43 @@ private fun TelaLerQrCode(
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(250.dp),
+                    .height(180.dp),
                 shape = RoundedCornerShape(22.dp),
-                colors = CardDefaults.cardColors(containerColor = FundoTopo)
+                colors = CardDefaults.cardColors(
+                    containerColor = FundoTopo
+                )
             ) {
-                Box(
-                    modifier = Modifier.fillMaxSize(),
-                    contentAlignment = Alignment.Center
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(18.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center
                 ) {
-                    if (mostrarCamera) {
-                        LeitorCamera(
-                            aoLer = { conteudo ->
-                                mostrarCamera = false
-                                val dados = interpretarQrPareamento(conteudo)
+                    Text("▦", fontSize = 58.sp, color = Azul)
 
-                                if (dados != null) {
-                                    codigo = dados.first
-                                    mensagem = "QR Code reconhecido. Código: ${dados.first}"
-                                    erro = false
-                                } else {
-                                    mensagem = "Este QR Code não é válido para o Teclado P2P V2."
-                                    erro = true
-                                }
-                            },
-                            aoFalhar = { detalhe ->
-                                mensagem = detalhe
-                                erro = true
-                            }
-                        )
-                    } else {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Text("▦", fontSize = 68.sp, color = Azul)
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Text(
-                                "Área de leitura do QR Code",
-                                color = TextoSecundario,
-                                fontSize = 13.sp
-                            )
-                        }
-                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    Text(
+                        "Leitor de QR Code",
+                        color = TextoPrincipal,
+                        fontWeight = FontWeight.SemiBold
+                    )
+
+                    Spacer(modifier = Modifier.height(4.dp))
+
+                    Text(
+                        "A leitura automática ainda precisa ser integrada.",
+                        color = TextoSecundario,
+                        fontSize = 12.sp,
+                        textAlign = TextAlign.Center
+                    )
                 }
             }
 
-            Spacer(modifier = Modifier.height(14.dp))
+            Spacer(modifier = Modifier.height(12.dp))
 
-            Button(
+            OutlinedButton(
                 modifier = Modifier.fillMaxWidth(),
                 onClick = {
                     val permitido = ContextCompat.checkSelfPermission(
@@ -515,14 +557,15 @@ private fun TelaLerQrCode(
                     ) == PackageManager.PERMISSION_GRANTED
 
                     if (permitido) {
-                        mostrarCamera = true
                         erro = false
+                        mensagem =
+                            "A permissão da câmera está ativa, mas o leitor ainda não foi implementado."
                     } else {
                         permissaoCamera.launch(Manifest.permission.CAMERA)
                     }
                 }
             ) {
-                Text(if (mostrarCamera) "Câmera aberta" else "Abrir câmera e ler QR Code")
+                Text("Verificar permissão da câmera", color = Azul)
             }
 
             Spacer(modifier = Modifier.height(22.dp))
@@ -532,7 +575,7 @@ private fun TelaLerQrCode(
             Spacer(modifier = Modifier.height(18.dp))
 
             Text(
-                "Ou digite o código de pareamento",
+                "Digite o código de pareamento",
                 color = TextoPrincipal,
                 fontWeight = FontWeight.SemiBold,
                 fontSize = 15.sp
@@ -545,13 +588,15 @@ private fun TelaLerQrCode(
                 onValueChange = { novo ->
                     codigo = novo.filter(Char::isDigit).take(6)
                     erro = false
-                    mensagem = "Digite o código de seis dígitos exibido no outro celular."
+                    mensagem = "Informe os seis dígitos do código."
                 },
                 modifier = Modifier.fillMaxWidth(),
                 label = { Text("Código de 6 dígitos") },
                 placeholder = { Text("123456") },
                 singleLine = true,
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                keyboardOptions = KeyboardOptions(
+                    keyboardType = KeyboardType.Number
+                ),
                 colors = OutlinedTextFieldDefaults.colors(
                     focusedTextColor = TextoPrincipal,
                     unfocusedTextColor = TextoPrincipal,
@@ -576,19 +621,14 @@ private fun TelaLerQrCode(
                 modifier = Modifier.fillMaxWidth(),
                 enabled = codigo.length == 6 && !processando,
                 onClick = {
-                    /*
-                     * A sessão pode ser reconhecida aqui, mas a conexão P2P
-                     * completa exige implementar e integrar a sinalização WebRTC.
-                     */
-                    scope.launch {
-                        processando = true
-                        erro = false
-                        mensagem = "Código reconhecido. A entrada na sessão ainda precisa ser integrada ao WebRTC."
-                        processando = false
-                    }
+                    erro = false
+                    mensagem =
+                        "O código foi preenchido, mas a entrada na sessão e a conexão WebRTC ainda não estão implementadas."
                 }
             ) {
-                Text(if (processando) "Conectando..." else "Conectar")
+                Text(
+                    if (processando) "Conectando..." else "Conectar"
+                )
             }
 
             Spacer(modifier = Modifier.height(8.dp))
@@ -598,55 +638,6 @@ private fun TelaLerQrCode(
             }
         }
     }
-}
-
-private fun interpretarQrPareamento(conteudo: String): Pair<String, String>? {
-    return runCatching {
-        val uri = android.net.Uri.parse(conteudo)
-
-        if (uri.scheme != "teclado-p2p" || uri.host != "pair") {
-            return null
-        }
-
-        val code = uri.getQueryParameter("code") ?: return null
-        val session = uri.getQueryParameter("session") ?: return null
-
-        if (!code.matches(Regex("\\d{6}"))) return null
-        if (!session.matches(Regex("[a-fA-F0-9-]{36}"))) return null
-
-        code to session
-    }.getOrNull()
-}
-
-@Composable
-private fun LeitorCamera(
-    aoLer: (String) -> Unit,
-    aoFalhar: (String) -> Unit
-) {
-    val context = LocalContext.current
-
-    androidx.compose.ui.viewinterop.AndroidView(
-        modifier = Modifier.fillMaxSize(),
-        factory = { ctx ->
-            android.widget.FrameLayout(ctx).apply {
-                val preview = android.widget.TextView(ctx).apply {
-                    text = "A leitura contínua pela câmera será conectada na próxima etapa."
-                    setTextColor(android.graphics.Color.WHITE)
-                    textSize = 14f
-                    gravity = android.view.Gravity.CENTER
-                    setPadding(24, 24, 24, 24)
-                }
-                addView(
-                    preview,
-                    android.widget.FrameLayout.LayoutParams(
-                        android.widget.FrameLayout.LayoutParams.MATCH_PARENT,
-                        android.widget.FrameLayout.LayoutParams.MATCH_PARENT
-                    )
-                )
-            }
-        },
-        update = {}
-    )
 }
 
 @Composable
@@ -664,7 +655,9 @@ private fun Cabecalho(
         verticalAlignment = Alignment.CenterVertically
     ) {
         Text("‹", fontSize = 32.sp, color = TextoPrincipal)
+
         Spacer(modifier = Modifier.width(16.dp))
+
         Text(
             titulo,
             fontSize = 18.sp,
@@ -710,6 +703,7 @@ private fun LinhaConfiguracao(
 
             if (opcao.descricao.isNotBlank()) {
                 Spacer(modifier = Modifier.height(4.dp))
+
                 Text(
                     opcao.descricao,
                     fontSize = 12.sp,
@@ -746,175 +740,41 @@ private fun TelaOpcao(
 
         Text(
             text = when (titulo) {
-                "Idiomas" -> "As opções de idioma e layout serão implementadas aqui."
-                "Temas" -> "A personalização de cores e aparência será implementada aqui."
-                "Digitação" -> "As preferências de digitação serão implementadas aqui."
-                "Emoji" -> "As opções de emoji serão implementadas aqui."
-                "Entrada avançada" -> "Os recursos adicionais serão implementados aqui."
-                "Layout e teclas" -> "A personalização do layout será implementada aqui."
-                "Som e vibração" -> "As opções de som e vibração serão implementadas aqui."
-                "Privacidade" -> "Aqui ficarão as informações de privacidade do teclado."
-                "Conta" -> "As opções de conta serão implementadas aqui."
-                "Ajuda e Feedback" -> "As informações de ajuda serão adicionadas aqui."
-                "Sobre o Teclado P2P V2" -> "Teclado P2P V2\nVersão 1.0"
-                else -> "Configurações disponíveis em breve."
-            },
-            modifier = Modifier.padding(horizontal = 24.dp),
-            fontSize = 15.sp,
-            color = TextoSecundario,
-            lineHeight = 24.sp
-        )
-    }
-}           textAlign = TextAlign.Center
-                    )
-                }
-            }
+                "Idiomas" ->
+                    "As opções de idioma e layout serão implementadas aqui."
 
-            Spacer(modifier = Modifier.height(20.dp))
+                "Temas" ->
+                    "A personalização de cores e aparência será implementada aqui."
 
-            erro?.let {
-                Text(
-                    it,
-                    color = Color(0xFFFF8A80),
-                    textAlign = TextAlign.Center,
-                    fontSize = 13.sp
-                )
-                Spacer(modifier = Modifier.height(12.dp))
-            }
+                "Digitação" ->
+                    "As preferências de digitação serão implementadas aqui."
 
-            Button(
-                enabled = !carregando,
-                onClick = {
-                    scope.launch {
-                        carregando = true
-                        erro = null
-                        sessao = null
+                "Emoji" ->
+                    "As opções de emoji serão implementadas aqui."
 
-                        try {
-                            sessao = cliente.createSession()
-                        } catch (e: Exception) {
-                            erro = when (e.message) {
-                                "SESSION_NOT_FOUND" ->
-                                    "Sessão não encontrada."
-                                "FIREBASE_AUTH_REQUIRED" ->
-                                    "Autenticação Firebase necessária."
-                                else ->
-                                    "Falha ao criar sessão: ${e.message ?: "verifique a configuração Firebase"}"
-                            }
-                        } finally {
-                            carregando = false
-                        }
-                    }
-                }
-            ) {
-                Text(if (carregando) "Criando..." else "Criar sessão e QR Code")
-            }
+                "Entrada avançada" ->
+                    "Os recursos adicionais serão implementados aqui."
 
-            Spacer(modifier = Modifier.height(12.dp))
+                "Layout e teclas" ->
+                    "A personalização do layout será implementada aqui."
 
-            OutlinedButton(onClick = voltar) {
-                Text("Voltar", color = Azul)
-            }
-        }
-    }
-}
+                "Som e vibração" ->
+                    "As opções de som e vibração serão implementadas aqui."
 
-@Composable
-private fun LinhaConfiguracao(
-    opcao: OpcaoConfiguracao,
-    aoClicar: () -> Unit
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = aoClicar)
-            .heightIn(min = 76.dp)
-            .padding(horizontal = 24.dp, vertical = 12.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Box(
-            modifier = Modifier.size(42.dp),
-            contentAlignment = Alignment.Center
-        ) {
-            Text(
-                opcao.icone,
-                fontSize = 28.sp,
-                color = TextoPrincipal
-            )
-        }
+                "Privacidade" ->
+                    "Aqui ficarão as informações de privacidade do teclado."
 
-        Spacer(modifier = Modifier.width(24.dp))
+                "Conta" ->
+                    "As opções de conta serão implementadas aqui."
 
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                opcao.titulo,
-                fontSize = 15.sp,
-                fontWeight = FontWeight.Medium,
-                color = TextoPrincipal
-            )
+                "Ajuda e Feedback" ->
+                    "As informações de ajuda serão adicionadas aqui."
 
-            if (opcao.descricao.isNotBlank()) {
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    opcao.descricao,
-                    fontSize = 12.sp,
-                    color = TextoSecundario
-                )
-            }
-        }
-    }
-}
+                "Sobre o Teclado P2P V2" ->
+                    "Teclado P2P V2\nVersão 1.0"
 
-@Composable
-private fun TelaOpcao(
-    titulo: String,
-    voltar: () -> Unit
-) {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Fundo)
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(FundoTopo)
-                .height(64.dp)
-                .clickable(onClick = voltar)
-                .padding(horizontal = 20.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text("‹", fontSize = 32.sp, color = TextoPrincipal)
-            Spacer(modifier = Modifier.width(20.dp))
-            Text(titulo, fontSize = 18.sp, color = TextoPrincipal)
-        }
-
-        Spacer(modifier = Modifier.height(24.dp))
-
-        Text(
-            titulo,
-            modifier = Modifier.padding(horizontal = 24.dp),
-            fontSize = 22.sp,
-            fontWeight = FontWeight.Bold,
-            color = TextoPrincipal
-        )
-
-        Spacer(modifier = Modifier.height(12.dp))
-
-        Text(
-            text = when (titulo) {
-                "Idiomas" -> "As opções de idioma e layout serão implementadas aqui."
-                "Temas" -> "A personalização de cores e aparência será implementada aqui."
-                "Digitação" -> "As preferências de digitação serão implementadas aqui."
-                "Emoji" -> "As opções de emoji serão implementadas aqui."
-                "Entrada avançada" -> "Os recursos adicionais serão implementados aqui."
-                "Layout e teclas" -> "A personalização do layout será implementada aqui."
-                "Som e vibração" -> "As opções de som e vibração serão implementadas aqui."
-                "Privacidade" -> "Aqui ficarão as informações de privacidade do teclado."
-                "Conta" -> "As opções de conta serão implementadas aqui."
-                "Ajuda e Feedback" -> "As informações de ajuda serão adicionadas aqui."
-                "Sobre o Teclado P2P V2" -> "Teclado P2P V2\nVersão 1.0"
-                else -> "Configurações disponíveis em breve."
+                else ->
+                    "Configurações disponíveis em breve."
             },
             modifier = Modifier.padding(horizontal = 24.dp),
             fontSize = 15.sp,
