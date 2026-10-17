@@ -8,12 +8,6 @@ import com.google.zxing.EncodeHintType
 import com.google.zxing.qrcode.QRCodeWriter
 import com.google.zxing.qrcode.decoder.ErrorCorrectionLevel
 
-/**
- * Gera um QR Code como Bitmap.
- *
- * @param conteudo Texto ou link que será armazenado no QR Code.
- * @param tamanho Largura e altura da imagem em pixels.
- */
 fun gerarQrCode(
     conteudo: String,
     tamanho: Int = 600
@@ -23,7 +17,7 @@ fun gerarQrCode(
     }
 
     require(tamanho > 0) {
-        "O tamanho do QR Code deve ser maior que zero."
+        "O tamanho deve ser maior que zero."
     }
 
     val configuracoes = mapOf(
@@ -44,11 +38,7 @@ fun gerarQrCode(
     for (y in 0 until tamanho) {
         for (x in 0 until tamanho) {
             pixels[y * tamanho + x] =
-                if (matriz[x, y]) {
-                    Color.BLACK
-                } else {
-                    Color.WHITE
-                }
+                if (matriz[x, y]) Color.BLACK else Color.WHITE
         }
     }
 
