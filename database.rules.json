@@ -2,35 +2,36 @@
   "rules": {
     ".read": false,
     ".write": false,
+    "pairingCodes": {
+      "$code": {
+        ".read": "auth != null && $code.matches(/^[0-9]{6}$/)",
+        ".write": "auth != null && ((!data.exists() && newData.exists() && root.child('pairingSessions').child(newData.child('sessionId').val()).child('ownerUid').val() === auth.uid && newData.child('status').val() === 'waiting' && newData.child('expiresAt').val() > now) || (data.exists() && !newData.exists() && root.child('pairingSessions').child(data.child('sessionId').val()).child('ownerUid').val() === auth.uid) || (data.child('status').val() === 'waiting' && newData.child('status').val() === 'joined' && newData.child('joinedUid').val() === auth.uid && newData.child('sessionId').val() === data.child('sessionId').val() && newData.child('expiresAt').val() === data.child('expiresAt').val()))",
+        ".validate": "newData.hasChildren(['sessionId', 'expiresAt', 'status'])",
+        "sessionId": { ".validate": "newData.isString()" },
+        "expiresAt": { ".validate": "newData.isNumber()" },
+        "status": { ".validate": "newData.val() === 'waiting' || newData.val() === 'joined'" },
+        "joinedUid": { ".validate": "newData.isString() && newData.val().length > 0" }
+      }
+    },
     "pairingSessions": {
-      ".indexOn": ["code", "expiresAt"],
-      ".read": "auth != null && query.orderByChild === 'code' && query.equalTo != null && query.equalTo.matches(/^[0-9]{6}$/)",
       "$sessionId": {
-        ".read": "auth != null && (data.child('ownerUid').val() === auth.uid || data.child('joinedUid').val() === auth.uid)",
-        ".write": "auth != null && ((!data.exists() && newData.exists() && newData.child('ownerUid').val() === auth.uid && newData.child('status').val() === 'waiting' && newData.child('code').val().matches(/^[0-9]{6}$/) && newData.child('expiresAt').val() > now) || (data.child('ownerUid').val() === auth.uid && !newData.exists()) || (data.child('status').val() === 'waiting' && newData.child('status').val() === 'joined' && newData.child('joinedUid').val() === auth.uid && newData.child('ownerUid').val() === data.child('ownerUid').val() && newData.child('code').val() === data.child('code').val() && newData.child('expiresAt').val() === data.child('expiresAt').val() && newData.child('sessionId').val() === data.child('sessionId').val()))",
-        "sessionId": {
-          ".validate": "newData.isString() && newData.val() === $sessionId"
-        },
-        "ownerUid": {
-          ".validate": "newData.isString() && newData.val().length > 0"
-        },
-        "joinedUid": {
-          ".validate": "newData.isString() && newData.val().length > 0"
-        },
-        "code": {
-          ".validate": "newData.isString() && newData.val().matches(/^[0-9]{6}$/)"
-        },
-        "expiresAt": {
-          ".validate": "newData.isNumber()"
-        },
-        "status": {
-          ".validate": "newData.val() === 'waiting' || newData.val() === 'joined'"
-        },
+        ".read": "auth != null && (data.child('ownerUid').val() === auth.uid || root.child('pairingCodes').child(data.child('code').val()).child('joinedUid').val() === auth.uid)",
+        ".write": "auth != null && ((!data.exists() && newData.exists() && newData.child('ownerUid').val() === auth.uid && newData.child('sessionId').val() === $sessionId && newData.child('status').val() === 'waiting' && newData.child('code').val().matches(/^[0-9]{6}$/) && newData.child('expiresAt').val() > now) || (data.child('ownerUid').val() === auth.uid && !newData.exists()))",
+        ".validate": "newData.hasChildren(['sessionId', 'code', 'ownerUid', 'createdAt', 'expiresAt', 'status'])",
+        "sessionId": { ".validate": "newData.isString() && newData.val() === $sessionId" },
+        "code": { ".validate": "newData.isString() && newData.val().matches(/^[0-9]{6}$/)" },
+        "ownerUid": { ".validate": "newData.isString() && newData.val().length > 0" },
+        "createdAt": { ".validate": "newData.exists()" },
+        "expiresAt": { ".validate": "newData.isNumber()" },
+        "status": { ".validate": "newData.val() === 'waiting'" },
         "messages": {
           "$messageId": {
-            ".read": "auth != null && (root.child('pairingSessions').child($sessionId).child('ownerUid').val() === auth.uid || root.child('pairingSessions').child($sessionId).child('joinedUid').val() === auth.uid)",
-            ".write": "auth != null && (root.child('pairingSessions').child($sessionId).child('ownerUid').val() === auth.uid || root.child('pairingSessions').child($sessionId).child('joinedUid').val() === auth.uid) && newData.child('senderUid').val() === auth.uid && newData.child('payload').isString() && newData.child('payload').val().length <= 262144",
-            ".validate": "newData.hasChildren(['senderUid', 'payload', 'createdAt'])"
+            ".read": "auth != null && (root.child('pairingSessions').child($sessionId).child('ownerUid').val() === auth.uid || root.child('pairingCodes').child(root.child('pairingSessions').child($sessionId).child('code').val()).child('joinedUid').val() === auth.uid)",
+            ".write": "auth != null && (root.child('pairingSessions').child($sessionId).child('ownerUid').val() === auth.uid || root.child('pairingCodes').child(root.child('pairingSessions').child($sessionId).child('code').val()).child('joinedUid').val() === auth.uid) && newData.child('senderUid').val() === auth.uid && newData.child('payload').isString() && newData.child('payload').val().length <= 262144",
+            ".validate": "newData.hasChildren(['senderUid', 'payload', 'createdAt'])",
+            "senderUid": { ".validate": "newData.isString()" },
+            "payload": { ".validate": "newData.isString() && newData.val().length <= 262144" },
+            "createdAt": { ".validate": "newData.exists()" }
           }
         }
       }
