@@ -13,7 +13,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -24,8 +23,6 @@ import org.webrtc.PeerConnectionFactory
 import org.webrtc.SessionDescription
 import java.io.Closeable
 import java.util.concurrent.atomic.AtomicBoolean
-import kotlin.coroutines.resume
-import kotlin.coroutines.resumeWithException
 
 /**
  * Coordinates Firebase signaling and a WebRTC data channel for an explicitly initiated pairing.
@@ -38,7 +35,7 @@ class WebRtcPairingCoordinator(
 
     private val appContext = context.applicationContext
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-    private val manager = PeerConnectionManager(factory(), IceServerProvider())
+    private val manager = PeerConnectionManager(factory(appContext), IceServerProvider())
     private val closed = AtomicBoolean(false)
     private var listener: Closeable? = null
     private var session: PairingSession? = null
@@ -57,7 +54,7 @@ class WebRtcPairingCoordinator(
         session = pairingSession
         offerer = isOfferer
 
-        manager.createConnection(
+        val created = manager.createConnection(
             onIceCandidate = { candidate ->
                 sendSignal(
                     JSONObject()
@@ -72,8 +69,10 @@ class WebRtcPairingCoordinator(
                 if (message == "p2p:ping") manager.sendMessage("p2p:pong")
                 else if (message == "p2p:pong") _status.value = "Canal de dados WebRTC validado."
             }
-        ).also { created ->
-            check(created) { _status.value = "Não foi possível criar a conexão WebRTC." }
+        )
+        if (!created) {
+            _status.value = "Não foi possível criar a conexão WebRTC."
+            return
         }
 
         if (offerer) manager.createDataChannel()
@@ -189,10 +188,9 @@ class WebRtcPairingCoordinator(
     companion object {
         @Volatile private var sharedFactory: PeerConnectionFactory? = null
 
-        private fun factory(): PeerConnectionFactory {
-            return checkNotNull(sharedFactory) {
-                "PeerConnectionFactory must be initialized with an Android Context first."
-            }
+        private fun factory(context: Context): PeerConnectionFactory {
+            initialize(context)
+            return checkNotNull(sharedFactory) { "WEBRTC_FACTORY_INITIALIZATION_FAILED" }
         }
 
         @Synchronized
