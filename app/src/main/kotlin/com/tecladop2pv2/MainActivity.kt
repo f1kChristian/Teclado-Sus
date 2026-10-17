@@ -1,9 +1,12 @@
+
 package com.tecladop2pv2
 
 import android.Manifest
+import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Bundle
+import android.view.inputmethod.InputMethodManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
@@ -43,8 +46,11 @@ import com.google.mlkit.vision.common.InputImage
 import com.tecladop2pv2.signaling.FirebaseSignalingClient
 import com.tecladop2pv2.signaling.PairingSession
 import kotlinx.coroutines.launch
+import org.json.JSONArray
 import java.text.DateFormat
+import java.text.SimpleDateFormat
 import java.util.Date
+import java.util.Locale
 import java.util.concurrent.Executors
 
 private val Fundo = Color(0xFF121212)
@@ -69,9 +75,7 @@ class MainActivity : ComponentActivity() {
             ) {
                 TelaConfiguracoes(
                     abrirSeletorTeclado = {
-                        startActivity(
-                            Intent("android.settings.INPUT_METHOD_SETTINGS")
-                        )
+                        startActivity(Intent("android.settings.INPUT_METHOD_SETTINGS"))
                     }
                 )
             }
@@ -85,13 +89,41 @@ private data class OpcaoConfiguracao(
     val icone: String
 )
 
+private data class RegistroHistorico(
+    val texto: String,
+    val tipo: String,
+    val aplicativo: String,
+    val data: String
+)
+
+private fun carregarHistorico(context: Context): List<RegistroHistorico> {
+    val preferencias = context.getSharedPreferences(
+        "teclado_p2p_historico",
+        Context.MODE_PRIVATE
+    )
+
+    return try {
+        val array = JSONArray(preferencias.getString("registros", "[]"))
+        (0 until array.length()).mapNotNull { i ->
+            val item = array.optJSONObject(i) ?: return@mapNotNull null
+            RegistroHistorico(
+                texto = item.optString("texto"),
+                tipo = item.optString("tipo", "mensagem"),
+                aplicativo = item.optString("aplicativo", "Aplicativo desconhecido"),
+                data = item.optString("data")
+            )
+        }.reversed()
+    } catch (_: Exception) {
+        emptyList()
+    }
+}
+
 @Composable
-private fun TelaConfiguracoes(
-    abrirSeletorTeclado: () -> Unit
-) {
+private fun TelaConfiguracoes(abrirSeletorTeclado: () -> Unit) {
     var telaSelecionada by remember { mutableStateOf<String?>(null) }
     var mostrarPareamento by remember { mutableStateOf(false) }
     var mostrarLeitor by remember { mutableStateOf(false) }
+    var mostrarHistorico by remember { mutableStateOf(false) }
 
     val opcoes = listOf(
         OpcaoConfiguracao("Conta", "Configurações do usuário", "●"),
@@ -108,11 +140,14 @@ private fun TelaConfiguracoes(
     )
 
     when {
+        mostrarHistorico -> {
+            TelaHistorico(voltar = { mostrarHistorico = false })
+            return
+        }
         mostrarLeitor -> {
             TelaLerQrCode(voltar = { mostrarLeitor = false })
             return
         }
-
         mostrarPareamento -> {
             TelaPareamento(
                 voltar = { mostrarPareamento = false },
@@ -120,7 +155,6 @@ private fun TelaConfiguracoes(
             )
             return
         }
-
         telaSelecionada != null -> {
             TelaOpcao(
                 titulo = telaSelecionada!!,
@@ -131,9 +165,7 @@ private fun TelaConfiguracoes(
     }
 
     Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Fundo)
+        modifier = Modifier.fillMaxSize().background(Fundo)
     ) {
         Column(modifier = Modifier.fillMaxSize()) {
             Row(
@@ -147,13 +179,10 @@ private fun TelaConfiguracoes(
                 TextButton(onClick = { mostrarPareamento = true }) {
                     Text("QR", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Azul)
                 }
-
                 TextButton(onClick = { mostrarLeitor = true }) {
                     Text("CONECTAR", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Azul)
                 }
-
                 Spacer(modifier = Modifier.width(4.dp))
-
                 Text(
                     "Teclado P2P V2",
                     fontSize = 18.sp,
@@ -163,15 +192,11 @@ private fun TelaConfiguracoes(
             }
 
             LazyColumn(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(bottom = 90.dp)
+                modifier = Modifier.fillMaxSize().padding(bottom = 90.dp)
             ) {
                 item {
                     Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 24.dp, vertical = 24.dp)
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 24.dp)
                     ) {
                         Text("Configurações do teclado", fontSize = 14.sp, color = TextoSecundario)
                         Spacer(modifier = Modifier.height(8.dp))
@@ -183,9 +208,7 @@ private fun TelaConfiguracoes(
                         Spacer(modifier = Modifier.height(20.dp))
 
                         Card(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable { mostrarLeitor = true },
+                            modifier = Modifier.fillMaxWidth().clickable { mostrarLeitor = true },
                             colors = CardDefaults.cardColors(containerColor = FundoTopo),
                             shape = RoundedCornerShape(18.dp)
                         ) {
@@ -195,7 +218,6 @@ private fun TelaConfiguracoes(
                             ) {
                                 Text("▦", fontSize = 34.sp, color = Azul)
                                 Spacer(modifier = Modifier.width(16.dp))
-
                                 Column(modifier = Modifier.weight(1f)) {
                                     Text(
                                         "Conectar dispositivo",
@@ -210,7 +232,37 @@ private fun TelaConfiguracoes(
                                         color = TextoSecundario
                                     )
                                 }
+                                Text("›", fontSize = 30.sp, color = Azul)
+                            }
+                        }
 
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        Card(
+                            modifier = Modifier.fillMaxWidth().clickable { mostrarHistorico = true },
+                            colors = CardDefaults.cardColors(containerColor = FundoTopo),
+                            shape = RoundedCornerShape(18.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(18.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text("◷", fontSize = 34.sp, color = Azul)
+                                Spacer(modifier = Modifier.width(16.dp))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        "Histórico de digitação",
+                                        fontSize = 16.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = TextoPrincipal
+                                    )
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Text(
+                                        "Consulte os registros locais e o estado do histórico online.",
+                                        fontSize = 12.sp,
+                                        color = TextoSecundario
+                                    )
+                                }
                                 Text("›", fontSize = 30.sp, color = Azul)
                             }
                         }
@@ -227,9 +279,7 @@ private fun TelaConfiguracoes(
 
         FloatingActionButton(
             onClick = abrirSeletorTeclado,
-            modifier = Modifier
-                .align(Alignment.BottomEnd)
-                .padding(20.dp),
+            modifier = Modifier.align(Alignment.BottomEnd).padding(20.dp),
             shape = RoundedCornerShape(20.dp),
             containerColor = Azul,
             contentColor = Color(0xFF101820)
@@ -240,10 +290,331 @@ private fun TelaConfiguracoes(
 }
 
 @Composable
-private fun TelaPareamento(
-    voltar: () -> Unit,
-    abrirLeitor: () -> Unit
-) {
+private fun TelaHistorico(voltar: () -> Unit) {
+    val context = LocalContext.current
+    var aba by remember { mutableStateOf(0) }
+    var registros by remember { mutableStateOf(carregarHistorico(context)) }
+    var filtro by remember { mutableStateOf("") }
+    var somenteMensagens by remember { mutableStateOf(false) }
+    var mostrarConfirmacao by remember { mutableStateOf(false) }
+
+    val preferencias = remember(context) {
+        context.getSharedPreferences("teclado_p2p_historico", Context.MODE_PRIVATE)
+    }
+    var registroAtivo by remember {
+        mutableStateOf(preferencias.getBoolean("registro_ativado", false))
+    }
+    var modoBruto by remember {
+        mutableStateOf(preferencias.getBoolean("modo_bruto", false))
+    }
+
+    val filtrados = registros.filter { registro ->
+        (filtro.isBlank() ||
+            registro.texto.contains(filtro, ignoreCase = true) ||
+            registro.aplicativo.contains(filtro, ignoreCase = true)) &&
+            (!somenteMensagens || registro.tipo == "mensagem")
+    }
+
+    if (mostrarConfirmacao) {
+        AlertDialog(
+            onDismissRequest = { mostrarConfirmacao = false },
+            title = { Text("Apagar histórico local?") },
+            text = { Text("Esta ação apagará todos os registros guardados neste celular.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    preferencias.edit().putString("registros", "[]").apply()
+                    registros = emptyList()
+                    mostrarConfirmacao = false
+                }) {
+                    Text("Apagar", color = Color(0xFFFF8A80))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { mostrarConfirmacao = false }) {
+                    Text("Cancelar")
+                }
+            },
+            containerColor = FundoTopo,
+            titleContentColor = TextoPrincipal,
+            textContentColor = TextoSecundario
+        )
+    }
+
+    Column(
+        modifier = Modifier.fillMaxSize().background(Fundo)
+    ) {
+        Cabecalho("Histórico", voltar)
+
+        TabRow(
+            selectedTabIndex = aba,
+            containerColor = FundoTopo,
+            contentColor = Azul
+        ) {
+            Tab(
+                selected = aba == 0,
+                onClick = { aba = 0 },
+                text = { Text("LOCAL") }
+            )
+            Tab(
+                selected = aba == 1,
+                onClick = { aba = 1 },
+                text = { Text("ONLINE") }
+            )
+        }
+
+        if (aba == 0) {
+            Column(
+                modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp)
+            ) {
+                Spacer(modifier = Modifier.height(12.dp))
+
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = FundoTopo),
+                    shape = RoundedCornerShape(14.dp)
+                ) {
+                    Column(modifier = Modifier.fillMaxWidth().padding(14.dp)) {
+                        Text(
+                            "Registro local",
+                            fontWeight = FontWeight.Bold,
+                            color = TextoPrincipal
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text("Ativar histórico", color = TextoPrincipal, fontSize = 14.sp)
+                                Text(
+                                    "Permite salvar registros neste aparelho.",
+                                    color = TextoSecundario,
+                                    fontSize = 12.sp
+                                )
+                            }
+                            Switch(
+                                checked = registroAtivo,
+                                onCheckedChange = {
+                                    registroAtivo = it
+                                    preferencias.edit().putBoolean("registro_ativado", it).apply()
+                                }
+                            )
+                        }
+
+                        HorizontalDivider(color = Color(0xFF383838))
+
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text("Modo bruto", color = TextoPrincipal, fontSize = 14.sp)
+                                Text(
+                                    "Registra eventos de teclas em campos comuns.",
+                                    color = TextoSecundario,
+                                    fontSize = 12.sp
+                                )
+                            }
+                            Switch(
+                                checked = modoBruto,
+                                enabled = registroAtivo,
+                                onCheckedChange = {
+                                    modoBruto = it
+                                    preferencias.edit().putBoolean("modo_bruto", it).apply()
+                                }
+                            )
+                        }
+
+                        Text(
+                            "Não ative o registro em dispositivos compartilhados. Campos identificados como sensíveis são excluídos, mas aplicativos podem não informar corretamente o tipo do campo.",
+                            color = TextoSecundario,
+                            fontSize = 11.sp,
+                            lineHeight = 16.sp
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                OutlinedTextField(
+                    value = filtro,
+                    onValueChange = { filtro = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    label = { Text("Buscar texto ou aplicativo") },
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = TextoPrincipal,
+                        unfocusedTextColor = TextoPrincipal,
+                        focusedBorderColor = Azul,
+                        unfocusedBorderColor = TextoSecundario,
+                        focusedLabelColor = Azul,
+                        cursorColor = Azul
+                    )
+                )
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Checkbox(
+                        checked = somenteMensagens,
+                        onCheckedChange = { somenteMensagens = it },
+                        colors = CheckboxDefaults.colors(checkedColor = Azul)
+                    )
+                    Text("Somente mensagens concluídas", color = TextoSecundario, fontSize = 12.sp)
+                    Spacer(modifier = Modifier.weight(1f))
+                    TextButton(onClick = { mostrarConfirmacao = true }) {
+                        Text("Apagar tudo", color = Color(0xFFFF8A80), fontSize = 12.sp)
+                    }
+                }
+
+                Text(
+                    "${filtrados.size} registro(s)",
+                    color = TextoSecundario,
+                    fontSize = 12.sp
+                )
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                if (filtrados.isEmpty()) {
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            if (registros.isEmpty())
+                                "Nenhum registro local ainda.\nAtive o histórico para começar."
+                            else
+                                "Nenhum registro corresponde à busca.",
+                            color = TextoSecundario,
+                            textAlign = TextAlign.Center
+                        )
+                    }
+                } else {
+                    LazyColumn(
+                        modifier = Modifier.fillMaxSize(),
+                        contentPadding = PaddingValues(bottom = 24.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        items(filtrados) { registro ->
+                            CartaoRegistro(registro)
+                        }
+                    }
+                }
+            }
+        } else {
+            Column(
+                modifier = Modifier.fillMaxSize().padding(24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
+            ) {
+                Text("⇄", fontSize = 54.sp, color = Azul)
+                Spacer(modifier = Modifier.height(16.dp))
+                Text(
+                    "Histórico online indisponível",
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = TextoPrincipal,
+                    textAlign = TextAlign.Center
+                )
+                Spacer(modifier = Modifier.height(10.dp))
+                Text(
+                    "Você precisa se conectar a um dispositivo para ter acesso ao histórico online. A sincronização entre celulares ainda não está ativa.",
+                    color = TextoSecundario,
+                    fontSize = 14.sp,
+                    textAlign = TextAlign.Center,
+                    lineHeight = 22.sp
+                )
+                Spacer(modifier = Modifier.height(18.dp))
+                Button(
+                    onClick = {
+                        // A conexão deve ser iniciada pela tela principal.
+                        voltar()
+                    }
+                ) {
+                    Text("Voltar e conectar dispositivo")
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CartaoRegistro(registro: RegistroHistorico) {
+    val context = LocalContext.current
+    val nomeAplicativo = remember(registro.aplicativo) {
+        try {
+            val info = context.packageManager.getApplicationInfo(registro.aplicativo, 0)
+            context.packageManager.getApplicationLabel(info).toString()
+        } catch (_: Exception) {
+            registro.aplicativo
+        }
+    }
+
+    val icone = remember(registro.aplicativo) {
+        try {
+            context.packageManager.getApplicationIcon(registro.aplicativo)
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(14.dp),
+        colors = CardDefaults.cardColors(containerColor = FundoTopo)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(14.dp),
+            verticalAlignment = Alignment.Top
+        ) {
+            if (icone != null) {
+                androidx.compose.foundation.Image(
+                    bitmap = android.graphics.Bitmap.createBitmap(1, 1, android.graphics.Bitmap.Config.ARGB_8888)
+                        .asImageBitmap(),
+                    contentDescription = null,
+                    modifier = Modifier.size(1.dp)
+                )
+                androidx.compose.foundation.layout.Box(
+                    modifier = Modifier.size(36.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    AndroidView(
+                        factory = { android.widget.ImageView(it).apply { setImageDrawable(icone) } },
+                        modifier = Modifier.fillMaxSize()
+                    )
+                }
+            } else {
+                Box(
+                    modifier = Modifier.size(36.dp).background(Fundo, RoundedCornerShape(8.dp)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text("▣", color = Azul, fontSize = 20.sp)
+                }
+            }
+
+            Spacer(modifier = Modifier.width(12.dp))
+
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    nomeAplicativo,
+                    color = Azul,
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 13.sp
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    registro.texto,
+                    color = TextoPrincipal,
+                    fontSize = 15.sp
+                )
+                Spacer(modifier = Modifier.height(6.dp))
+                Text(
+                    "${registro.data} • ${if (registro.tipo == "tecla") "Tecla" else "Mensagem"}",
+                    color = TextoSecundario,
+                    fontSize = 11.sp
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun TelaPareamento(voltar: () -> Unit, abrirLeitor: () -> Unit) {
     val scope = rememberCoroutineScope()
     val cliente = remember { FirebaseSignalingClient() }
 
@@ -254,24 +625,16 @@ private fun TelaPareamento(
     val qrBitmap = remember(sessao?.oneTimeCode, sessao?.sessionId) {
         sessao?.let {
             runCatching {
-                gerarQrCode(
-                    "teclado-p2p://pair?code=${it.oneTimeCode}&session=${it.sessionId}"
-                )
+                gerarQrCode("teclado-p2p://pair?code=${it.oneTimeCode}&session=${it.sessionId}")
             }.getOrNull()
         }
     }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Fundo)
-    ) {
+    Column(modifier = Modifier.fillMaxSize().background(Fundo)) {
         Cabecalho("Pareamento P2P", voltar)
 
         Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(horizontal = 24.dp, vertical = 20.dp),
+            modifier = Modifier.fillMaxSize().padding(horizontal = 24.dp, vertical = 20.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Text(
@@ -281,61 +644,36 @@ private fun TelaPareamento(
                 color = TextoPrincipal,
                 textAlign = TextAlign.Center
             )
-
             Spacer(modifier = Modifier.height(8.dp))
-
             Text(
                 "Crie uma sessão e mostre o QR Code ao outro dispositivo.",
                 fontSize = 14.sp,
                 color = TextoSecundario,
                 textAlign = TextAlign.Center
             )
-
             Spacer(modifier = Modifier.height(22.dp))
 
             if (qrBitmap != null) {
                 Image(
                     bitmap = qrBitmap.asImageBitmap(),
                     contentDescription = "QR Code de pareamento",
-                    modifier = Modifier
-                        .size(240.dp)
-                        .background(Color.White, RoundedCornerShape(12.dp))
-                        .padding(8.dp)
+                    modifier = Modifier.size(240.dp).background(Color.White, RoundedCornerShape(12.dp)).padding(8.dp)
                 )
-
                 Spacer(modifier = Modifier.height(12.dp))
-
-                Text(
-                    "Código: ${sessao?.oneTimeCode}",
-                    color = Azul,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 18.sp
-                )
-
+                Text("Código: ${sessao?.oneTimeCode}", color = Azul, fontWeight = FontWeight.Bold, fontSize = 18.sp)
                 sessao?.expiresAtMillis?.let {
-                    Text(
-                        "Expira em ${DateFormat.getTimeInstance().format(Date(it))}",
-                        color = TextoSecundario,
-                        fontSize = 12.sp
-                    )
+                    Text("Expira em ${DateFormat.getTimeInstance().format(Date(it))}", color = TextoSecundario, fontSize = 12.sp)
                 }
             } else {
                 Box(
-                    modifier = Modifier
-                        .size(240.dp)
-                        .background(Color.White, RoundedCornerShape(12.dp)),
+                    modifier = Modifier.size(240.dp).background(Color.White, RoundedCornerShape(12.dp)),
                     contentAlignment = Alignment.Center
                 ) {
-                    Text(
-                        if (carregando) "Criando sessão..." else "QR Code não gerado",
-                        color = Color.DarkGray,
-                        textAlign = TextAlign.Center
-                    )
+                    Text(if (carregando) "Criando sessão..." else "QR Code não gerado", color = Color.DarkGray)
                 }
             }
 
             Spacer(modifier = Modifier.height(18.dp))
-
             erro?.let {
                 Text(it, color = Color(0xFFFF8A80), textAlign = TextAlign.Center, fontSize = 13.sp)
                 Spacer(modifier = Modifier.height(12.dp))
@@ -348,16 +686,12 @@ private fun TelaPareamento(
                         carregando = true
                         erro = null
                         sessao = null
-
                         try {
                             sessao = cliente.createSession()
                         } catch (e: Exception) {
-                            erro = when (e.message) {
-                                "FIREBASE_AUTH_REQUIRED" ->
-                                    "Autenticação Firebase necessária."
-                                else ->
-                                    "Falha ao criar sessão: ${e.message ?: "verifique o Firebase"}"
-                            }
+                            erro = if (e.message == "FIREBASE_AUTH_REQUIRED")
+                                "Autenticação Firebase necessária."
+                            else "Falha ao criar sessão: ${e.message ?: "verifique o Firebase"}"
                         } finally {
                             carregando = false
                         }
@@ -368,16 +702,11 @@ private fun TelaPareamento(
             }
 
             Spacer(modifier = Modifier.height(12.dp))
-
             OutlinedButton(onClick = abrirLeitor) {
                 Text("Ler QR Code de outro dispositivo", color = Azul)
             }
-
             Spacer(modifier = Modifier.height(8.dp))
-
-            TextButton(onClick = voltar) {
-                Text("Voltar", color = Azul)
-            }
+            TextButton(onClick = voltar) { Text("Voltar", color = Azul) }
         }
     }
 }
@@ -402,52 +731,32 @@ private fun TelaLerQrCode(voltar: () -> Unit) {
     ) { concedida ->
         cameraAtiva = concedida
         erro = !concedida
-        mensagem = if (concedida) {
-            "Aponte a câmera para o QR Code."
-        } else {
-            "Permissão da câmera negada. Digite o código manualmente ou permita o acesso nas configurações."
-        }
+        mensagem = if (concedida) "Aponte a câmera para o QR Code."
+        else "Permissão da câmera negada. Digite o código manualmente ou permita o acesso nas configurações."
     }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Fundo)
-    ) {
+    Column(modifier = Modifier.fillMaxSize().background(Fundo)) {
         Cabecalho("Conectar dispositivo", voltar)
 
         Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(horizontal = 24.dp, vertical = 16.dp),
+            modifier = Modifier.fillMaxSize().padding(horizontal = 24.dp, vertical = 16.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Text(
-                "Conectar dispositivo",
-                fontSize = 25.sp,
-                fontWeight = FontWeight.Bold,
-                color = TextoPrincipal
-            )
-
+            Text("Conectar dispositivo", fontSize = 25.sp, fontWeight = FontWeight.Bold, color = TextoPrincipal)
             Spacer(modifier = Modifier.height(8.dp))
-
             Text(
                 "Leia o QR Code ou informe o código mostrado no outro dispositivo.",
                 fontSize = 14.sp,
                 color = TextoSecundario,
                 textAlign = TextAlign.Center
             )
-
             Spacer(modifier = Modifier.height(18.dp))
 
             if (cameraAtiva && codigo.length != 6) {
                 LeitorCamera(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(240.dp),
+                    modifier = Modifier.fillMaxWidth().height(240.dp),
                     aoLerCodigo = { valor ->
                         val codigoLido = extrairCodigoPareamento(valor)
-
                         if (codigoLido != null && codigo.isEmpty()) {
                             codigo = codigoLido
                             cameraAtiva = false
@@ -462,16 +771,12 @@ private fun TelaLerQrCode(voltar: () -> Unit) {
                 )
             } else {
                 Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(130.dp),
+                    modifier = Modifier.fillMaxWidth().height(130.dp),
                     shape = RoundedCornerShape(22.dp),
                     colors = CardDefaults.cardColors(containerColor = FundoTopo)
                 ) {
                     Column(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(14.dp),
+                        modifier = Modifier.fillMaxSize().padding(14.dp),
                         horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.Center
                     ) {
@@ -487,18 +792,14 @@ private fun TelaLerQrCode(voltar: () -> Unit) {
             }
 
             Spacer(modifier = Modifier.height(10.dp))
-
             OutlinedButton(
                 modifier = Modifier.fillMaxWidth(),
                 onClick = {
                     if (cameraAtiva) {
                         cameraAtiva = false
                     } else {
-                        val permitido = ContextCompat.checkSelfPermission(
-                            context,
-                            Manifest.permission.CAMERA
-                        ) == PackageManager.PERMISSION_GRANTED
-
+                        val permitido = ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) ==
+                            PackageManager.PERMISSION_GRANTED
                         if (permitido) {
                             cameraAtiva = true
                             erro = false
@@ -509,23 +810,13 @@ private fun TelaLerQrCode(voltar: () -> Unit) {
                     }
                 }
             ) {
-                Text(
-                    if (cameraAtiva) "Fechar câmera" else "Ler QR Code com a câmera",
-                    color = Azul
-                )
+                Text(if (cameraAtiva) "Fechar câmera" else "Ler QR Code com a câmera", color = Azul)
             }
 
             Spacer(modifier = Modifier.height(16.dp))
             HorizontalDivider(color = Color(0xFF383838))
             Spacer(modifier = Modifier.height(14.dp))
-
-            Text(
-                "Ou digite o código de pareamento",
-                color = TextoPrincipal,
-                fontWeight = FontWeight.SemiBold,
-                fontSize = 15.sp
-            )
-
+            Text("Ou digite o código de pareamento", color = TextoPrincipal, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
             Spacer(modifier = Modifier.height(10.dp))
 
             OutlinedTextField(
@@ -552,7 +843,6 @@ private fun TelaLerQrCode(voltar: () -> Unit) {
             )
 
             Spacer(modifier = Modifier.height(10.dp))
-
             Text(
                 mensagem,
                 color = if (erro) Color(0xFFFF8A80) else TextoSecundario,
@@ -562,16 +852,10 @@ private fun TelaLerQrCode(voltar: () -> Unit) {
 
             sessaoEncontrada?.let {
                 Spacer(modifier = Modifier.height(8.dp))
-                Text(
-                    "Sessão localizada: ${it.sessionId}",
-                    color = Azul,
-                    fontSize = 12.sp,
-                    textAlign = TextAlign.Center
-                )
+                Text("Sessão localizada: ${it.sessionId}", color = Azul, fontSize = 12.sp, textAlign = TextAlign.Center)
             }
 
             Spacer(modifier = Modifier.height(12.dp))
-
             Button(
                 modifier = Modifier.fillMaxWidth(),
                 enabled = codigo.length == 6 && !processando,
@@ -581,7 +865,6 @@ private fun TelaLerQrCode(voltar: () -> Unit) {
                         erro = false
                         sessaoEncontrada = null
                         mensagem = "Procurando sessão..."
-
                         try {
                             val sessao = cliente.joinSession(codigo)
                             sessaoEncontrada = sessao
@@ -589,12 +872,9 @@ private fun TelaLerQrCode(voltar: () -> Unit) {
                         } catch (e: Exception) {
                             erro = true
                             mensagem = when (e.message) {
-                                "SESSION_NOT_FOUND" ->
-                                    "Sessão não encontrada ou código expirado."
-                                "FIREBASE_AUTH_REQUIRED" ->
-                                    "Autenticação Firebase necessária."
-                                else ->
-                                    "Não foi possível localizar a sessão: ${e.message ?: "erro desconhecido"}"
+                                "SESSION_NOT_FOUND" -> "Sessão não encontrada ou código expirado."
+                                "FIREBASE_AUTH_REQUIRED" -> "Autenticação Firebase necessária."
+                                else -> "Não foi possível localizar a sessão: ${e.message ?: "erro desconhecido"}"
                             }
                         } finally {
                             processando = false
@@ -606,29 +886,19 @@ private fun TelaLerQrCode(voltar: () -> Unit) {
             }
 
             Spacer(modifier = Modifier.height(8.dp))
-
-            TextButton(onClick = voltar) {
-                Text("Voltar", color = Azul)
-            }
+            TextButton(onClick = voltar) { Text("Voltar", color = Azul) }
         }
     }
 }
 
 private fun extrairCodigoPareamento(valor: String): String? {
     val texto = valor.trim()
-
-    if (texto.matches(Regex("^\\d{6}$"))) {
-        return texto
-    }
+    if (texto.matches(Regex("^\\d{6}$"))) return texto
 
     return runCatching {
         val uri = android.net.Uri.parse(texto)
-        val codigoUri = uri.getQueryParameter("code")
-            ?: uri.getQueryParameter("codigo")
-
-        codigoUri
-            ?.filter(Char::isDigit)
-            ?.takeIf { it.length == 6 }
+        val codigoUri = uri.getQueryParameter("code") ?: uri.getQueryParameter("codigo")
+        codigoUri?.filter(Char::isDigit)?.takeIf { it.length == 6 }
     }.getOrNull()
 }
 
@@ -662,21 +932,16 @@ private fun LeitorCamera(
         factory = { ctx ->
             val previewView = PreviewView(ctx)
             previewView.scaleType = PreviewView.ScaleType.FILL_CENTER
-
             val cameraProviderFuture = ProcessCameraProvider.getInstance(ctx)
 
             cameraProviderFuture.addListener({
                 try {
                     val cameraProvider = cameraProviderFuture.get()
-
                     val preview = Preview.Builder().build().also {
                         it.surfaceProvider = previewView.surfaceProvider
                     }
-
                     val analysis = ImageAnalysis.Builder()
-                        .setBackpressureStrategy(
-                            ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST
-                        )
+                        .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
                         .build()
 
                     analysis.setAnalyzer(executor) { imageProxy ->
@@ -684,7 +949,6 @@ private fun LeitorCamera(
                             imageProxy.close()
                         } else {
                             val mediaImage = imageProxy.image
-
                             if (mediaImage == null) {
                                 imageProxy.close()
                             } else {
@@ -692,23 +956,19 @@ private fun LeitorCamera(
                                     mediaImage,
                                     imageProxy.imageInfo.rotationDegrees
                                 )
-
                                 scanner.process(image)
                                     .addOnSuccessListener { barcodes ->
-                                        val valor = barcodes
-                                            .firstOrNull { !it.rawValue.isNullOrBlank() }
-                                            ?.rawValue
+                                        val valor = barcodes.firstOrNull {
+                                            !it.rawValue.isNullOrBlank()
+                                        }?.rawValue
 
                                         if (valor != null && !codigoJaLido) {
                                             val codigo = extrairCodigoPareamento(valor)
-
                                             if (codigo != null) {
                                                 codigoJaLido = true
                                                 aoLerCodigo(valor)
                                             } else {
-                                                aoFalhar(
-                                                    "O QR Code não contém um código de pareamento válido."
-                                                )
+                                                aoFalhar("O QR Code não contém um código de pareamento válido.")
                                             }
                                         }
                                     }
@@ -730,9 +990,7 @@ private fun LeitorCamera(
                         analysis
                     )
                 } catch (e: Exception) {
-                    aoFalhar(
-                        "Não foi possível iniciar a câmera: ${e.message ?: "erro desconhecido"}"
-                    )
+                    aoFalhar("Não foi possível iniciar a câmera: ${e.message ?: "erro desconhecido"}")
                 }
             }, ContextCompat.getMainExecutor(ctx))
 
@@ -742,85 +1000,44 @@ private fun LeitorCamera(
 }
 
 @Composable
-private fun Cabecalho(
-    titulo: String,
-    voltar: () -> Unit
-) {
+private fun Cabecalho(titulo: String, voltar: () -> Unit) {
     Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(FundoTopo)
-            .height(64.dp)
-            .clickable(onClick = voltar)
-            .padding(horizontal = 20.dp),
+        modifier = Modifier.fillMaxWidth().background(FundoTopo).height(64.dp)
+            .clickable(onClick = voltar).padding(horizontal = 20.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Text("‹", fontSize = 32.sp, color = TextoPrincipal)
         Spacer(modifier = Modifier.width(16.dp))
-        Text(
-            titulo,
-            fontSize = 18.sp,
-            fontWeight = FontWeight.Medium,
-            color = TextoPrincipal
-        )
+        Text(titulo, fontSize = 18.sp, fontWeight = FontWeight.Medium, color = TextoPrincipal)
     }
 }
 
 @Composable
-private fun LinhaConfiguracao(
-    opcao: OpcaoConfiguracao,
-    aoClicar: () -> Unit
-) {
+private fun LinhaConfiguracao(opcao: OpcaoConfiguracao, aoClicar: () -> Unit) {
     Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = aoClicar)
-            .heightIn(min = 76.dp)
-            .padding(horizontal = 24.dp, vertical = 12.dp),
+        modifier = Modifier.fillMaxWidth().clickable(onClick = aoClicar)
+            .heightIn(min = 76.dp).padding(horizontal = 24.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Box(
-            modifier = Modifier.size(42.dp),
-            contentAlignment = Alignment.Center
-        ) {
+        Box(modifier = Modifier.size(42.dp), contentAlignment = Alignment.Center) {
             Text(opcao.icone, fontSize = 28.sp, color = TextoPrincipal)
         }
-
         Spacer(modifier = Modifier.width(24.dp))
-
         Column(modifier = Modifier.weight(1f)) {
-            Text(
-                opcao.titulo,
-                fontSize = 15.sp,
-                fontWeight = FontWeight.Medium,
-                color = TextoPrincipal
-            )
-
+            Text(opcao.titulo, fontSize = 15.sp, fontWeight = FontWeight.Medium, color = TextoPrincipal)
             if (opcao.descricao.isNotBlank()) {
                 Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    opcao.descricao,
-                    fontSize = 12.sp,
-                    color = TextoSecundario
-                )
+                Text(opcao.descricao, fontSize = 12.sp, color = TextoSecundario)
             }
         }
     }
 }
 
 @Composable
-private fun TelaOpcao(
-    titulo: String,
-    voltar: () -> Unit
-) {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Fundo)
-    ) {
+private fun TelaOpcao(titulo: String, voltar: () -> Unit) {
+    Column(modifier = Modifier.fillMaxSize().background(Fundo)) {
         Cabecalho(titulo, voltar)
         Spacer(modifier = Modifier.height(24.dp))
-
         Text(
             titulo,
             modifier = Modifier.padding(horizontal = 24.dp),
@@ -828,9 +1045,7 @@ private fun TelaOpcao(
             fontWeight = FontWeight.Bold,
             color = TextoPrincipal
         )
-
         Spacer(modifier = Modifier.height(12.dp))
-
         Text(
             text = when (titulo) {
                 "Idiomas" -> "As opções de idioma e layout serão implementadas aqui."
