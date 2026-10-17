@@ -13,6 +13,7 @@ import android.view.ViewGroup
 import android.view.inputmethod.EditorInfo
 import android.widget.Button
 import android.widget.LinearLayout
+import android.widget.PopupWindow
 import org.json.JSONArray
 import org.json.JSONObject
 import java.text.SimpleDateFormat
@@ -24,9 +25,13 @@ class TecladoInputMethodService : InputMethodService() {
     private val fundo = Color.rgb(35, 36, 40)
     private val corTecla = Color.rgb(65, 67, 73)
     private val corEspecial = Color.rgb(85, 91, 105)
+    private val corPopup = Color.rgb(45, 47, 54)
 
     private var maiusculas = false
     private var simbolos = false
+    private var textoBruto = StringBuilder()
+    private var textoAntesDaEdicao = ""
+    private var popupAtual: PopupWindow? = null
 
     private val preferencias by lazy {
         getSharedPreferences("teclado_p2p_historico", Context.MODE_PRIVATE)
@@ -36,6 +41,15 @@ class TecladoInputMethodService : InputMethodService() {
 
     override fun onStartInput(attribute: EditorInfo?, restarting: Boolean) {
         super.onStartInput(attribute, restarting)
+        fecharBufferBruto()
+        textoAntesDaEdicao = ""
+    }
+
+    override fun onFinishInput() {
+        fecharBufferBruto()
+        popupAtual?.dismiss()
+        popupAtual = null
+        super.onFinishInput()
     }
 
     private fun campoSensivel(): Boolean {
@@ -43,16 +57,19 @@ class TecladoInputMethodService : InputMethodService() {
         val classe = tipo and InputType.TYPE_MASK_CLASS
         val variacao = tipo and InputType.TYPE_MASK_VARIATION
 
-        return classe == InputType.TYPE_CLASS_NUMBER &&
-            variacao == InputType.TYPE_NUMBER_VARIATION_PASSWORD ||
-            classe == InputType.TYPE_CLASS_TEXT &&
+        if (classe == InputType.TYPE_CLASS_NUMBER &&
+            variacao == InputType.TYPE_NUMBER_VARIATION_PASSWORD
+        ) return true
+
+        if (classe == InputType.TYPE_CLASS_TEXT &&
             variacao in setOf(
                 InputType.TYPE_TEXT_VARIATION_PASSWORD,
                 InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD,
                 InputType.TYPE_TEXT_VARIATION_WEB_PASSWORD
-            ) ||
-            classe == InputType.TYPE_CLASS_TEXT &&
-            (tipo and InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS) != 0
+            )
+        ) return true
+
+        return false
     }
 
     private fun registroAtivo(): Boolean =
@@ -61,10 +78,12 @@ class TecladoInputMethodService : InputMethodService() {
     private fun modoBruto(): Boolean =
         preferencias.getBoolean("modo_bruto", false)
 
-    private fun registrar(texto: String, tipo: String) {
-        if (!registroAtivo() || campoSensivel() || texto.isEmpty()) return
+    private fun salvarRegistro(texto: String, tipo: String) {
+        if (!registroAtivo() || campoSensivel() || texto.isBlank()) return
 
-        val pacote = currentInputEditorInfo?.packageName ?: "Aplicativo desconhecido"
+        val pacote = currentInputEditorInfo?.packageName
+            ?: "Aplicativo desconhecido"
+
         val data = SimpleDateFormat(
             "yyyy-MM-dd HH:mm:ss",
             Locale.getDefault()
@@ -85,9 +104,9 @@ class TecladoInputMethodService : InputMethodService() {
             }
         )
 
-        // Limita o histórico local aos 500 registros mais recentes.
         val limite = JSONArray()
         val inicio = (lista.length() - 500).coerceAtLeast(0)
+
         for (i in inicio until lista.length()) {
             limite.put(lista.getJSONObject(i))
         }
@@ -95,6 +114,19 @@ class TecladoInputMethodService : InputMethodService() {
         preferencias.edit()
             .putString("registros", limite.toString())
             .apply()
+    }
+
+    private fun adicionarAoBuffer(caractere: String) {
+        if (registroAtivo() && modoBruto() && !campoSensivel()) {
+            textoBruto.append(caractere)
+        }
+    }
+
+    private fun fecharBufferBruto() {
+        if (textoBruto.isNotEmpty()) {
+            salvarRegistro(textoBruto.toString(), "tecla")
+            textoBruto.clear()
+        }
     }
 
     private fun criarTeclado(): View {
@@ -142,6 +174,7 @@ class TecladoInputMethodService : InputMethodService() {
                     if (texto in listOf("⇧", "⌫", "?123", "ABC", "↵", "🌐"))
                         corEspecial else corTecla
                 )
+
                 minWidth = 0
                 minimumWidth = 0
                 minHeight = dp(44)
@@ -151,7 +184,7 @@ class TecladoInputMethodService : InputMethodService() {
                 contentDescription = when (texto) {
                     "Espaço" -> "Barra de espaço"
                     "⌫" -> "Apagar"
-                    "↵" -> "Enter"
+                    "↵" -> "Enviar ou Enter"
                     "⇧" -> "Maiúsculas"
                     "?123" -> "Números e símbolos"
                     "ABC" -> "Voltar para letras"
@@ -160,6 +193,13 @@ class TecladoInputMethodService : InputMethodService() {
                 }
 
                 setOnClickListener { tratarTecla(texto) }
+
+                if (texto.length == 1 && texto[0].isLetter()) {
+                    setOnLongClickListener {
+                        mostrarCaracteresAlternativos(this, texto)
+                        true
+                    }
+                }
             }
 
             val peso = when (texto) {
@@ -186,29 +226,123 @@ class TecladoInputMethodService : InputMethodService() {
         )
     }
 
+    private fun mostrarCaracteresAlternativos(origem: View, tecla: String) {
+        popupAtual?.dismiss()
+
+        val alternativas = when (tecla.lowercase()) {
+            "a" -> listOf("á", "à", "â", "ã", "ä", "å", "æ")
+            "c" -> listOf("ç", "ć", "č")
+            "e" -> listOf("é", "è", "ê", "ë")
+            "i" -> listOf("í", "ì", "î", "ï")
+            "n" -> listOf("ñ", "ń")
+            "o" -> listOf("ó", "ò", "ô", "õ", "ö", "ø", "œ")
+            "u" -> listOf("ú", "ù", "û", "ü")
+            "y" -> listOf("ý", "ÿ")
+            "s" -> listOf("ß", "ś", "š")
+            "z" -> listOf("ž", "ź", "ż")
+            else -> emptyList()
+        }
+
+        if (alternativas.isEmpty()) return
+
+        val linha = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+            setPadding(dp(4), dp(4), dp(4), dp(4))
+            setBackgroundColor(corPopup)
+        }
+
+        alternativas.forEach { alternativa ->
+            val caractere = if (maiusculas) alternativa.uppercase() else alternativa
+
+            val botao = Button(this).apply {
+                text = caractere
+                textSize = 18f
+                isAllCaps = false
+                setTextColor(Color.WHITE)
+                background = criarFundo(corEspecial)
+                minWidth = dp(42)
+                minimumWidth = dp(42)
+                minHeight = dp(48)
+                minimumHeight = dp(48)
+                setPadding(dp(3), 0, dp(3), 0)
+
+                setOnClickListener {
+                    if (campoSensivel()) {
+                        popupAtual?.dismiss()
+                        return@setOnClickListener
+                    }
+
+                    currentInputConnection?.commitText(caractere, 1)
+                    adicionarAoBuffer(caractere)
+
+                    if (registroAtivo() && !modoBruto()) {
+                        // O texto completo será salvo quando a mensagem for enviada.
+                    }
+
+                    popupAtual?.dismiss()
+                    popupAtual = null
+                    desativarMaiusculas()
+                }
+            }
+
+            linha.addView(
+                botao,
+                LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT,
+                    dp(48)
+                ).apply {
+                    setMargins(dp(2), 0, dp(2), 0)
+                }
+            )
+        }
+
+        val popup = PopupWindow(
+            linha,
+            ViewGroup.LayoutParams.WRAP_CONTENT,
+            dp(58),
+            true
+        ).apply {
+            isOutsideTouchable = true
+            elevation = dp(8).toFloat()
+        }
+
+        popupAtual = popup
+        popup.showAsDropDown(origem, 0, -origem.height - dp(62), Gravity.CENTER)
+    }
+
     private fun tratarTecla(tecla: String) {
         val ic = currentInputConnection ?: return
         val sensivel = campoSensivel()
 
         when (tecla) {
             "⌫" -> {
-                if (modoBruto() && !sensivel) registrar("[APAGAR]", "tecla")
+                // Apagar não é registrado como evento nem adicionado ao buffer.
                 ic.deleteSurroundingText(1, 0)
+                if (modoBruto() && textoBruto.isNotEmpty()) {
+                    textoBruto.deleteCharAt(textoBruto.length - 1)
+                }
             }
 
             "Espaço" -> {
-                if (modoBruto() && !sensivel) registrar("[ESPAÇO]", "tecla")
                 ic.commitText(" ", 1)
+                adicionarAoBuffer(" ")
                 desativarMaiusculas()
             }
 
             "↵" -> {
-                val antes = ic.getTextBeforeCursor(4000, 0)?.toString().orEmpty()
-                if (!sensivel && antes.isNotBlank()) {
-                    if (registroAtivo() && !modoBruto()) {
-                        registrar(antes.trim(), "mensagem")
+                val textoAtual = ic.getTextBeforeCursor(4000, 0)?.toString().orEmpty()
+
+                if (!sensivel && registroAtivo()) {
+                    if (modoBruto()) {
+                        // Uma entrada bruta por mensagem digitada.
+                        fecharBufferBruto()
                     }
-                    if (modoBruto()) registrar("[ENTER]", "tecla")
+
+                    // Salva a mensagem completa quando o usuário envia.
+                    if (textoAtual.isNotBlank()) {
+                        salvarRegistro(textoAtual.trim(), "mensagem")
+                    }
                 }
 
                 val acao = currentInputEditorInfo?.imeOptions
@@ -222,6 +356,8 @@ class TecladoInputMethodService : InputMethodService() {
                 } else {
                     ic.commitText("\n", 1)
                 }
+
+                textoAntesDaEdicao = ""
             }
 
             "⇧" -> {
@@ -245,7 +381,11 @@ class TecladoInputMethodService : InputMethodService() {
 
             else -> {
                 val caractere = if (maiusculas) tecla.uppercase() else tecla
-                if (modoBruto() && !sensivel) registrar(caractere, "tecla")
+
+                if (!sensivel) {
+                    adicionarAoBuffer(caractere)
+                }
+
                 ic.commitText(caractere, 1)
                 desativarMaiusculas()
             }
