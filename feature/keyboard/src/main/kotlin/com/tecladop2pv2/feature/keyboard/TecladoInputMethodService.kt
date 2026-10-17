@@ -1,4 +1,3 @@
-
 package com.tecladop2pv2.feature.keyboard
 
 import android.content.Context
@@ -16,9 +15,9 @@ import android.view.ViewConfiguration
 import android.view.ViewGroup
 import android.view.inputmethod.EditorInfo
 import android.widget.Button
+import android.widget.FrameLayout
 import android.widget.HorizontalScrollView
 import android.widget.LinearLayout
-import android.widget.PopupWindow
 import org.json.JSONArray
 import org.json.JSONObject
 import java.text.SimpleDateFormat
@@ -27,6 +26,10 @@ import java.util.Locale
 import kotlin.math.abs
 
 class TecladoInputMethodService : InputMethodService() {
+
+    // ---------------------------------------------------------
+    // Cores e estado do teclado
+    // ---------------------------------------------------------
 
     private val fundo = Color.rgb(35, 36, 40)
     private val corTecla = Color.rgb(65, 67, 73)
@@ -39,7 +42,10 @@ class TecladoInputMethodService : InputMethodService() {
 
     private val textoBruto = StringBuilder()
 
-    private var popupAtual: PopupWindow? = null
+    // A camada e as alternativas ficam na mesma janela do teclado.
+    private var camadaTeclado: FrameLayout? = null
+    private var popupAtual: HorizontalScrollView? = null
+
     private var botoesAlternativas = mutableListOf<Button>()
     private var indiceAlternativaSelecionada = 0
     private var alternativasVisiveis = emptyList<String>()
@@ -49,19 +55,32 @@ class TecladoInputMethodService : InputMethodService() {
     private val tempoPressaoLonga =
         ViewConfiguration.getLongPressTimeout().toLong()
 
-    // Inicializado somente depois que o serviço tiver um Context válido.
-    private val limiteMovimento: Int by lazy(LazyThreadSafetyMode.NONE) {
+    private val limiteMovimento: Int by lazy(
+        LazyThreadSafetyMode.NONE
+    ) {
         ViewConfiguration.get(this).scaledTouchSlop
     }
 
     private var ultimoTextoNaoVazio = ""
     private var envioJaRegistrado = false
 
+    private val preferencias by lazy {
+        getSharedPreferences(
+            "teclado_p2p_historico",
+            Context.MODE_PRIVATE
+        )
+    }
+
+    // ---------------------------------------------------------
+    // Verificação de limpeza do campo de texto
+    // ---------------------------------------------------------
+
     private val verificarLimpezaCampo = Runnable {
         val ic = currentInputConnection ?: return@Runnable
 
         val antes = ic.getTextBeforeCursor(4000, 0)
             ?.toString().orEmpty()
+
         val depois = ic.getTextAfterCursor(4000, 0)
             ?.toString().orEmpty()
 
@@ -78,14 +97,13 @@ class TecladoInputMethodService : InputMethodService() {
         }
     }
 
-    private val preferencias by lazy {
-        getSharedPreferences(
-            "teclado_p2p_historico",
-            Context.MODE_PRIVATE
-        )
-    }
+    // ---------------------------------------------------------
+    // Ciclo de vida do serviço
+    // ---------------------------------------------------------
 
-    override fun onCreateInputView(): View = criarTeclado()
+    override fun onCreateInputView(): View {
+        return criarTeclado()
+    }
 
     override fun onStartInput(
         attribute: EditorInfo?,
@@ -115,6 +133,8 @@ class TecladoInputMethodService : InputMethodService() {
     override fun onDestroy() {
         handler.removeCallbacksAndMessages(null)
         fecharPopupAlternativas()
+        camadaTeclado = null
+
         super.onDestroy()
     }
 
@@ -139,6 +159,7 @@ class TecladoInputMethodService : InputMethodService() {
 
         val antes = ic.getTextBeforeCursor(4000, 0)
             ?.toString().orEmpty()
+
         val depois = ic.getTextAfterCursor(4000, 0)
             ?.toString().orEmpty()
 
@@ -163,6 +184,7 @@ class TecladoInputMethodService : InputMethodService() {
 
     private fun campoSensivel(): Boolean {
         val tipo = currentInputEditorInfo?.inputType ?: return true
+
         val classe = tipo and InputType.TYPE_MASK_CLASS
         val variacao = tipo and InputType.TYPE_MASK_VARIATION
 
@@ -191,14 +213,23 @@ class TecladoInputMethodService : InputMethodService() {
     // Histórico e registro
     // ---------------------------------------------------------
 
-    private fun registroAtivo(): Boolean =
-        preferencias.getBoolean("registro_ativado", false)
+    private fun registroAtivo(): Boolean {
+        return preferencias.getBoolean("registro_ativado", false)
+    }
 
-    private fun modoBruto(): Boolean =
-        preferencias.getBoolean("modo_bruto", false)
+    private fun modoBruto(): Boolean {
+        return preferencias.getBoolean("modo_bruto", false)
+    }
 
-    private fun salvarRegistro(texto: String, tipo: String) {
-        if (!registroAtivo() || campoSensivel() || texto.isBlank()) {
+    private fun salvarRegistro(
+        texto: String,
+        tipo: String
+    ) {
+        if (
+            !registroAtivo() ||
+            campoSensivel() ||
+            texto.isBlank()
+        ) {
             return
         }
 
@@ -211,7 +242,9 @@ class TecladoInputMethodService : InputMethodService() {
         ).format(Date())
 
         val lista = try {
-            JSONArray(preferencias.getString("registros", "[]"))
+            JSONArray(
+                preferencias.getString("registros", "[]")
+            )
         } catch (_: Exception) {
             JSONArray()
         }
@@ -238,7 +271,11 @@ class TecladoInputMethodService : InputMethodService() {
     }
 
     private fun adicionarAoBuffer(caractere: String) {
-        if (registroAtivo() && modoBruto() && !campoSensivel()) {
+        if (
+            registroAtivo() &&
+            modoBruto() &&
+            !campoSensivel()
+        ) {
             textoBruto.append(caractere)
         }
     }
@@ -251,11 +288,18 @@ class TecladoInputMethodService : InputMethodService() {
     }
 
     private fun registrarMensagem(texto: String) {
-        if (texto.isBlank() || campoSensivel() || !registroAtivo()) {
+        if (
+            texto.isBlank() ||
+            campoSensivel() ||
+            !registroAtivo()
+        ) {
             return
         }
 
-        if (modoBruto()) fecharBufferBruto()
+        if (modoBruto()) {
+            fecharBufferBruto()
+        }
+
         salvarRegistro(texto.trim(), "mensagem")
     }
 
@@ -264,7 +308,7 @@ class TecladoInputMethodService : InputMethodService() {
     // ---------------------------------------------------------
 
     private fun criarTeclado(): View {
-        return LinearLayout(this).apply {
+        val teclado = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(4), dp(5), dp(4), dp(5))
             setBackgroundColor(fundo)
@@ -272,16 +316,28 @@ class TecladoInputMethodService : InputMethodService() {
             if (simbolos) {
                 adicionarLinha(
                     this,
-                    listOf("1", "2", "3", "4", "5", "6", "7", "8", "9", "0")
+                    listOf(
+                        "1", "2", "3", "4", "5",
+                        "6", "7", "8", "9", "0"
+                    )
                 )
+
                 adicionarLinha(
                     this,
-                    listOf("@", "#", "$", "%", "&", "-", "+", "(", ")", "/")
+                    listOf(
+                        "@", "#", "$", "%", "&",
+                        "-", "+", "(", ")", "/"
+                    )
                 )
+
                 adicionarLinha(
                     this,
-                    listOf("=", "*", "\"", "'", ":", ";", "!", "?", "⌫")
+                    listOf(
+                        "=", "*", "\"", "'", ":",
+                        ";", "!", "?", "⌫"
+                    )
                 )
+
                 adicionarLinha(
                     this,
                     listOf("ABC", ",", "🌐", "Espaço", ".", "↵")
@@ -289,21 +345,45 @@ class TecladoInputMethodService : InputMethodService() {
             } else {
                 adicionarLinha(
                     this,
-                    listOf("q", "w", "e", "r", "t", "y", "u", "i", "o", "p")
+                    listOf(
+                        "q", "w", "e", "r", "t",
+                        "y", "u", "i", "o", "p"
+                    )
                 )
+
                 adicionarLinha(
                     this,
-                    listOf("a", "s", "d", "f", "g", "h", "j", "k", "l")
+                    listOf(
+                        "a", "s", "d", "f", "g",
+                        "h", "j", "k", "l"
+                    )
                 )
+
                 adicionarLinha(
                     this,
-                    listOf("⇧", "z", "x", "c", "v", "b", "n", "m", "⌫")
+                    listOf(
+                        "⇧", "z", "x", "c", "v",
+                        "b", "n", "m", "⌫"
+                    )
                 )
+
                 adicionarLinha(
                     this,
                     listOf("?123", ",", "🌐", "Espaço", ".", "↵")
                 )
             }
+        }
+
+        return FrameLayout(this).apply {
+            camadaTeclado = this
+
+            addView(
+                teclado,
+                FrameLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.MATCH_PARENT
+                )
+            )
         }
     }
 
@@ -319,9 +399,11 @@ class TecladoInputMethodService : InputMethodService() {
         teclas.forEach { texto ->
             val rotulo = when {
                 texto == "Espaço" -> ""
+
                 texto.length == 1 &&
                     texto[0].isLetter() &&
                     maiusculas -> texto.uppercase(Locale.ROOT)
+
                 else -> texto
             }
 
@@ -329,21 +411,28 @@ class TecladoInputMethodService : InputMethodService() {
                 text = rotulo
                 textSize = if (texto == "Espaço") 14f else 18f
                 isAllCaps = false
+
                 setTextColor(Color.WHITE)
                 typeface = Typeface.DEFAULT
 
                 background = criarFundo(
                     if (
                         texto in listOf(
-                            "⇧", "⌫", "?123", "ABC", "↵", "🌐"
+                            "⇧", "⌫", "?123",
+                            "ABC", "↵", "🌐"
                         )
-                    ) corEspecial else corTecla
+                    ) {
+                        corEspecial
+                    } else {
+                        corTecla
+                    }
                 )
 
                 minWidth = 0
                 minimumWidth = 0
                 minHeight = dp(44)
                 minimumHeight = dp(44)
+
                 setPadding(dp(2), 0, dp(2), 0)
 
                 contentDescription = when (texto) {
@@ -361,7 +450,9 @@ class TecladoInputMethodService : InputMethodService() {
             if (alternativasPara(texto).isNotEmpty()) {
                 configurarPressaoLonga(botao, texto)
             } else {
-                botao.setOnClickListener { tratarTecla(texto) }
+                botao.setOnClickListener {
+                    tratarTecla(texto)
+                }
             }
 
             val peso = when (texto) {
@@ -373,7 +464,11 @@ class TecladoInputMethodService : InputMethodService() {
 
             linha.addView(
                 botao,
-                LinearLayout.LayoutParams(0, dp(45), peso).apply {
+                LinearLayout.LayoutParams(
+                    0,
+                    dp(45),
+                    peso
+                ).apply {
                     setMargins(dp(2), dp(3), dp(2), dp(3))
                 }
             )
@@ -398,13 +493,21 @@ class TecladoInputMethodService : InputMethodService() {
     ) {
         var pressionouLongo = false
         var movimentoCancelouLongPress = false
+
         var inicioX = 0f
         var inicioY = 0f
 
         val abrirPopup = Runnable {
-            if (!movimentoCancelouLongPress && botao.isPressed) {
+            if (
+                !movimentoCancelouLongPress &&
+                botao.isPressed
+            ) {
                 pressionouLongo = true
-                mostrarCaracteresAlternativos(botao, tecla)
+
+                mostrarCaracteresAlternativos(
+                    botao,
+                    tecla
+                )
             }
         }
 
@@ -415,13 +518,18 @@ class TecladoInputMethodService : InputMethodService() {
 
                     pressionouLongo = false
                     movimentoCancelouLongPress = false
+
                     inicioX = event.x
                     inicioY = event.y
 
                     view.isPressed = true
 
                     handler.removeCallbacks(abrirPopup)
-                    handler.postDelayed(abrirPopup, tempoPressaoLonga)
+                    handler.postDelayed(
+                        abrirPopup,
+                        tempoPressaoLonga
+                    )
+
                     true
                 }
 
@@ -443,6 +551,7 @@ class TecladoInputMethodService : InputMethodService() {
                             event.rawY
                         )
                     }
+
                     true
                 }
 
@@ -451,11 +560,11 @@ class TecladoInputMethodService : InputMethodService() {
                     view.isPressed = false
 
                     if (pressionouLongo) {
-                        // Atualiza a seleção também no ponto em que soltou.
                         selecionarAlternativaPeloDedo(
                             event.rawX,
                             event.rawY
                         )
+
                         confirmarAlternativaSelecionada()
                     } else if (!movimentoCancelouLongPress) {
                         tratarTecla(tecla)
@@ -525,7 +634,7 @@ class TecladoInputMethodService : InputMethodService() {
     }
 
     // ---------------------------------------------------------
-    // Popup posicionado acima da tecla pressionada
+    // Exibição das alternativas na mesma janela do teclado
     // ---------------------------------------------------------
 
     private fun mostrarCaracteresAlternativos(
@@ -534,8 +643,19 @@ class TecladoInputMethodService : InputMethodService() {
     ) {
         fecharPopupAlternativas()
 
+        val raiz = camadaTeclado ?: return
         val alternativas = alternativasPara(tecla)
-        if (alternativas.isEmpty() || !origem.isAttachedToWindow) return
+
+        if (
+            alternativas.isEmpty() ||
+            !origem.isAttachedToWindow
+        ) {
+            return
+        }
+
+        if (raiz.width <= 0 || raiz.height <= 0) {
+            return
+        }
 
         alternativasVisiveis = alternativas
         indiceAlternativaSelecionada = 0
@@ -545,19 +665,29 @@ class TecladoInputMethodService : InputMethodService() {
             isHorizontalScrollBarEnabled = false
             isVerticalScrollBarEnabled = false
             clipToPadding = false
+
             setPadding(dp(3), dp(3), dp(3), dp(3))
-            setBackgroundColor(corPopup)
+            background = criarFundo(corPopup)
+
+            // Não intercepta o gesto iniciado na tecla.
+            isClickable = false
+            isFocusable = false
+            isFocusableInTouchMode = false
+
+            elevation = dp(12).toFloat()
         }
 
         val linha = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
+
             setPadding(dp(2), dp(2), dp(2), dp(2))
         }
 
         alternativas.forEachIndexed { indice, alternativa ->
             val caractere = if (
-                maiusculas && alternativa.any { it.isLetter() }
+                maiusculas &&
+                alternativa.any { it.isLetter() }
             ) {
                 alternativa.uppercase(Locale.ROOT)
             } else {
@@ -568,20 +698,27 @@ class TecladoInputMethodService : InputMethodService() {
                 text = caractere
                 textSize = 19f
                 isAllCaps = false
+
                 setTextColor(Color.WHITE)
+
                 background = criarFundo(
-                    if (indice == 0) corSelecionado else corEspecial
+                    if (indice == 0) {
+                        corSelecionado
+                    } else {
+                        corEspecial
+                    }
                 )
 
                 minWidth = dp(44)
                 minimumWidth = dp(44)
                 minHeight = dp(48)
                 minimumHeight = dp(48)
+
                 setPadding(dp(3), 0, dp(3), 0)
 
-                // A tecla original continua recebendo o gesto.
                 isClickable = false
                 isFocusable = false
+                isFocusableInTouchMode = false
             }
 
             botoesAlternativas.add(botaoAlternativa)
@@ -605,66 +742,65 @@ class TecladoInputMethodService : InputMethodService() {
             )
         )
 
-        val raiz = origem.rootView
-        val larguraRaiz = if (raiz.width > 0) {
-            raiz.width
-        } else {
-            resources.displayMetrics.widthPixels
-        }
+        val larguraMaxima = (
+            raiz.width - dp(8)
+        ).coerceAtLeast(dp(100))
 
-        val larguraMaxima = (larguraRaiz - dp(8)).coerceAtLeast(dp(120))
-        val larguraConteudo = alternativas.size * dp(48) + dp(16)
-        val larguraPopup = minOf(larguraMaxima, larguraConteudo)
+        val larguraConteudo =
+            alternativas.size * dp(48) + dp(16)
+
+        val larguraPopup = minOf(
+            larguraMaxima,
+            larguraConteudo
+        )
+
         val alturaPopup = dp(60)
 
-        val popup = PopupWindow(
-            scroll,
-            larguraPopup,
-            alturaPopup,
-            false
-        ).apply {
-            isFocusable = false
-            isTouchable = false
-            isOutsideTouchable = false
-            elevation = dp(8).toFloat()
-            setBackgroundDrawable(criarFundo(corPopup))
-        }
-
-        popupAtual = popup
-
-        /*
-         * showAtLocation usa coordenadas relativas à janela.
-         * Convertemos a posição da tecla na tela para coordenadas
-         * relativas à raiz da janela do teclado.
-         */
+        // Converte a posição da tecla para coordenadas da camada.
         val posicaoTecla = IntArray(2)
         val posicaoRaiz = IntArray(2)
 
         origem.getLocationOnScreen(posicaoTecla)
         raiz.getLocationOnScreen(posicaoRaiz)
 
-        val xDesejado =
-            posicaoTecla[0] + origem.width / 2 - larguraPopup / 2
+        val teclaX = posicaoTecla[0] - posicaoRaiz[0]
+        val teclaY = posicaoTecla[1] - posicaoRaiz[1]
 
-        val xRelativo = xDesejado - posicaoRaiz[0]
-        val xPopup = xRelativo.coerceIn(
-            0,
-            (larguraRaiz - larguraPopup).coerceAtLeast(0)
+        val x = (
+            teclaX + origem.width / 2 - larguraPopup / 2
+        ).coerceIn(
+            dp(4),
+            (
+                raiz.width - larguraPopup - dp(4)
+            ).coerceAtLeast(dp(4))
         )
 
-        val yDesejado =
-            posicaoTecla[1] - alturaPopup - dp(4)
+        val yAcima = teclaY - alturaPopup - dp(4)
 
-        val yRelativo = yDesejado - posicaoRaiz[1]
-        val yPopup = yRelativo.coerceAtLeast(0)
+        val yDesejado = if (yAcima >= 0) {
+            yAcima
+        } else {
+            teclaY + origem.height + dp(4)
+        }
+
+        val y = yDesejado.coerceIn(
+            0,
+            (raiz.height - alturaPopup).coerceAtLeast(0)
+        )
+
+        val parametros = FrameLayout.LayoutParams(
+            larguraPopup,
+            alturaPopup
+        ).apply {
+            gravity = Gravity.TOP or Gravity.LEFT
+            leftMargin = x
+            topMargin = y
+        }
 
         try {
-            popup.showAtLocation(
-                raiz,
-                Gravity.TOP or Gravity.LEFT,
-                xPopup,
-                yPopup
-            )
+            raiz.addView(scroll, parametros)
+            scroll.bringToFront()
+            popupAtual = scroll
         } catch (_: Exception) {
             fecharPopupAlternativas()
             return
@@ -674,7 +810,7 @@ class TecladoInputMethodService : InputMethodService() {
     }
 
     // ---------------------------------------------------------
-    // Seleção pelo movimento do dedo
+    // Seleção da alternativa pelo movimento do dedo
     // ---------------------------------------------------------
 
     private fun selecionarAlternativaPeloDedo(
@@ -682,25 +818,42 @@ class TecladoInputMethodService : InputMethodService() {
         rawY: Float
     ) {
         val popup = popupAtual ?: return
-        if (!popup.isShowing || botoesAlternativas.isEmpty()) return
+
+        if (
+            popup.parent == null ||
+            botoesAlternativas.isEmpty()
+        ) {
+            return
+        }
 
         val posicaoPopup = IntArray(2)
-        popup.contentView.getLocationOnScreen(posicaoPopup)
+        popup.getLocationOnScreen(posicaoPopup)
 
+        val esquerda = posicaoPopup[0]
         val topo = posicaoPopup[1]
-        val base = topo + popup.contentView.height
+        val direita = esquerda + popup.width
+        val base = topo + popup.height
 
-        // Só muda a alternativa quando o dedo está sobre a faixa do popup.
-        if (rawY < topo || rawY > base) return
+        // Não troca a alternativa se o dedo estiver fora da faixa.
+        if (
+            rawX < esquerda ||
+            rawX > direita ||
+            rawY < topo ||
+            rawY > base
+        ) {
+            return
+        }
 
         var melhorIndice = -1
         var menorDistancia = Float.MAX_VALUE
 
         botoesAlternativas.forEachIndexed { indice, botao ->
-            val posicao = IntArray(2)
-            botao.getLocationOnScreen(posicao)
+            val posicaoBotao = IntArray(2)
+            botao.getLocationOnScreen(posicaoBotao)
 
-            val centroX = posicao[0] + botao.width / 2f
+            val centroX =
+                posicaoBotao[0] + botao.width / 2f
+
             val distancia = abs(rawX - centroX)
 
             if (distancia < menorDistancia) {
@@ -728,10 +881,19 @@ class TecladoInputMethodService : InputMethodService() {
                 }
             )
 
-            botao.alpha =
-                if (indice == indiceAlternativaSelecionada) 1f else 0.85f
+            botao.alpha = if (
+                indice == indiceAlternativaSelecionada
+            ) {
+                1f
+            } else {
+                0.85f
+            }
         }
     }
+
+    // ---------------------------------------------------------
+    // Inserção do caractere selecionado
+    // ---------------------------------------------------------
 
     private fun confirmarAlternativaSelecionada() {
         val alternativa = alternativasVisiveis.getOrNull(
@@ -743,7 +905,8 @@ class TecladoInputMethodService : InputMethodService() {
         if (alternativa == null) return
 
         val caractere = if (
-            maiusculas && alternativa.any { it.isLetter() }
+            maiusculas &&
+            alternativa.any { it.isLetter() }
         ) {
             alternativa.uppercase(Locale.ROOT)
         } else {
@@ -751,16 +914,20 @@ class TecladoInputMethodService : InputMethodService() {
         }
 
         val ic = currentInputConnection ?: return
+
         ic.commitText(caractere, 1)
         adicionarAoBuffer(caractere)
+
         desativarMaiusculas()
     }
 
     private fun fecharPopupAlternativas() {
+        val popup = popupAtual
+
         try {
-            popupAtual?.dismiss()
+            (popup?.parent as? ViewGroup)?.removeView(popup)
         } catch (_: Exception) {
-            // Ignora falha ao fechar um popup que já não esteja disponível.
+            // A visualização pode já ter sido removida.
         }
 
         popupAtual = null
@@ -781,8 +948,13 @@ class TecladoInputMethodService : InputMethodService() {
             "⌫" -> {
                 ic.deleteSurroundingText(1, 0)
 
-                if (modoBruto() && textoBruto.isNotEmpty()) {
-                    textoBruto.deleteCharAt(textoBruto.length - 1)
+                if (
+                    modoBruto() &&
+                    textoBruto.isNotEmpty()
+                ) {
+                    textoBruto.deleteCharAt(
+                        textoBruto.length - 1
+                    )
                 }
             }
 
@@ -800,14 +972,21 @@ class TecladoInputMethodService : InputMethodService() {
                         ?.toString().orEmpty()
                 )
 
-                if (!sensivel && textoAtual.isNotBlank()) {
+                if (
+                    !sensivel &&
+                    textoAtual.isNotBlank()
+                ) {
                     registrarMensagem(textoAtual)
                     envioJaRegistrado = true
                     ultimoTextoNaoVazio = ""
-                    handler.removeCallbacks(verificarLimpezaCampo)
+
+                    handler.removeCallbacks(
+                        verificarLimpezaCampo
+                    )
                 }
 
-                val acao = currentInputEditorInfo?.imeOptions
+                val acao = currentInputEditorInfo
+                    ?.imeOptions
                     ?.and(EditorInfo.IME_MASK_ACTION)
                     ?: EditorInfo.IME_ACTION_NONE
 
@@ -851,7 +1030,9 @@ class TecladoInputMethodService : InputMethodService() {
                     tecla
                 }
 
-                if (!sensivel) adicionarAoBuffer(caractere)
+                if (!sensivel) {
+                    adicionarAoBuffer(caractere)
+                }
 
                 ic.commitText(caractere, 1)
                 desativarMaiusculas()
@@ -871,6 +1052,10 @@ class TecladoInputMethodService : InputMethodService() {
         setInputView(criarTeclado())
     }
 
+    // ---------------------------------------------------------
+    // Utilitários visuais
+    // ---------------------------------------------------------
+
     private fun criarFundo(cor: Int): GradientDrawable {
         return GradientDrawable().apply {
             setColor(cor)
@@ -878,6 +1063,9 @@ class TecladoInputMethodService : InputMethodService() {
         }
     }
 
-    private fun dp(valor: Int): Int =
-        (valor * resources.displayMetrics.density).toInt()
+    private fun dp(valor: Int): Int {
+        return (
+            valor * resources.displayMetrics.density
+        ).toInt()
+    }
 }
