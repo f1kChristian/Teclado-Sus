@@ -8,6 +8,11 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.camera.core.CameraSelector
+import androidx.camera.core.ImageAnalysis
+import androidx.camera.core.Preview
+import androidx.camera.lifecycle.ProcessCameraProvider
+import androidx.camera.view.PreviewView
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -22,19 +27,25 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import com.google.mlkit.vision.barcode.BarcodeScannerOptions
+import com.google.mlkit.vision.barcode.BarcodeScanning
+import com.google.mlkit.vision.barcode.common.Barcode
+import com.google.mlkit.vision.common.InputImage
 import com.tecladop2pv2.signaling.FirebaseSignalingClient
 import com.tecladop2pv2.signaling.PairingSession
 import kotlinx.coroutines.launch
 import java.text.DateFormat
 import java.util.Date
+import java.util.concurrent.Executors
 
 private val Fundo = Color(0xFF121212)
 private val FundoTopo = Color(0xFF222222)
@@ -98,9 +109,7 @@ private fun TelaConfiguracoes(
 
     when {
         mostrarLeitor -> {
-            TelaLerQrCode(
-                voltar = { mostrarLeitor = false }
-            )
+            TelaLerQrCode(voltar = { mostrarLeitor = false })
             return
         }
 
@@ -135,30 +144,12 @@ private fun TelaConfiguracoes(
                     .padding(horizontal = 12.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                TextButton(
-                    onClick = { mostrarPareamento = true },
-                    contentPadding = PaddingValues(
-                        horizontal = 8.dp,
-                        vertical = 4.dp
-                    )
-                ) {
-                    Text(
-                        "QR",
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Azul
-                    )
+                TextButton(onClick = { mostrarPareamento = true }) {
+                    Text("QR", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Azul)
                 }
 
-                TextButton(
-                    onClick = { mostrarLeitor = true }
-                ) {
-                    Text(
-                        "CONECTAR",
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Azul
-                    )
+                TextButton(onClick = { mostrarLeitor = true }) {
+                    Text("CONECTAR", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Azul)
                 }
 
                 Spacer(modifier = Modifier.width(4.dp))
@@ -180,60 +171,39 @@ private fun TelaConfiguracoes(
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(
-                                horizontal = 24.dp,
-                                vertical = 24.dp
-                            )
+                            .padding(horizontal = 24.dp, vertical = 24.dp)
                     ) {
-                        Text(
-                            "Configurações do teclado",
-                            fontSize = 14.sp,
-                            color = TextoSecundario
-                        )
-
+                        Text("Configurações do teclado", fontSize = 14.sp, color = TextoSecundario)
                         Spacer(modifier = Modifier.height(8.dp))
-
                         Text(
                             "Personalize sua experiência de digitação.",
                             fontSize = 17.sp,
                             color = TextoPrincipal
                         )
-
                         Spacer(modifier = Modifier.height(20.dp))
 
                         Card(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clickable { mostrarLeitor = true },
-                            colors = CardDefaults.cardColors(
-                                containerColor = FundoTopo
-                            ),
+                            colors = CardDefaults.cardColors(containerColor = FundoTopo),
                             shape = RoundedCornerShape(18.dp)
                         ) {
                             Row(
                                 modifier = Modifier.padding(18.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Text(
-                                    "▦",
-                                    fontSize = 34.sp,
-                                    color = Azul
-                                )
-
+                                Text("▦", fontSize = 34.sp, color = Azul)
                                 Spacer(modifier = Modifier.width(16.dp))
 
-                                Column(
-                                    modifier = Modifier.weight(1f)
-                                ) {
+                                Column(modifier = Modifier.weight(1f)) {
                                     Text(
                                         "Conectar dispositivo",
                                         fontSize = 16.sp,
                                         fontWeight = FontWeight.Bold,
                                         color = TextoPrincipal
                                     )
-
                                     Spacer(modifier = Modifier.height(4.dp))
-
                                     Text(
                                         "Leia um QR Code ou digite o código de pareamento.",
                                         fontSize = 12.sp,
@@ -241,23 +211,16 @@ private fun TelaConfiguracoes(
                                     )
                                 }
 
-                                Text(
-                                    "›",
-                                    fontSize = 30.sp,
-                                    color = Azul
-                                )
+                                Text("›", fontSize = 30.sp, color = Azul)
                             }
                         }
                     }
                 }
 
                 items(opcoes) { opcao ->
-                    LinhaConfiguracao(
-                        opcao = opcao,
-                        aoClicar = {
-                            telaSelecionada = opcao.titulo
-                        }
-                    )
+                    LinhaConfiguracao(opcao = opcao) {
+                        telaSelecionada = opcao.titulo
+                    }
                 }
             }
         }
@@ -288,10 +251,7 @@ private fun TelaPareamento(
     var carregando by remember { mutableStateOf(false) }
     var erro by remember { mutableStateOf<String?>(null) }
 
-    val qrBitmap = remember(
-        sessao?.oneTimeCode,
-        sessao?.sessionId
-    ) {
+    val qrBitmap = remember(sessao?.oneTimeCode, sessao?.sessionId) {
         sessao?.let {
             runCatching {
                 gerarQrCode(
@@ -339,12 +299,8 @@ private fun TelaPareamento(
                     contentDescription = "QR Code de pareamento",
                     modifier = Modifier
                         .size(240.dp)
-                        .background(
-                            Color.White,
-                            RoundedCornerShape(12.dp)
-                        )
-                        .padding(8.dp),
-                    contentScale = ContentScale.Fit
+                        .background(Color.White, RoundedCornerShape(12.dp))
+                        .padding(8.dp)
                 )
 
                 Spacer(modifier = Modifier.height(12.dp))
@@ -356,12 +312,9 @@ private fun TelaPareamento(
                     fontSize = 18.sp
                 )
 
-                sessao?.expiresAtMillis?.let { expiracao ->
+                sessao?.expiresAtMillis?.let {
                     Text(
-                        "Expira em ${
-                            DateFormat.getTimeInstance()
-                                .format(Date(expiracao))
-                        }",
+                        "Expira em ${DateFormat.getTimeInstance().format(Date(it))}",
                         color = TextoSecundario,
                         fontSize = 12.sp
                     )
@@ -370,17 +323,11 @@ private fun TelaPareamento(
                 Box(
                     modifier = Modifier
                         .size(240.dp)
-                        .background(
-                            Color.White,
-                            RoundedCornerShape(12.dp)
-                        ),
+                        .background(Color.White, RoundedCornerShape(12.dp)),
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
-                        when {
-                            carregando -> "Criando sessão..."
-                            else -> "QR Code não gerado"
-                        },
+                        if (carregando) "Criando sessão..." else "QR Code não gerado",
                         color = Color.DarkGray,
                         textAlign = TextAlign.Center
                     )
@@ -390,13 +337,7 @@ private fun TelaPareamento(
             Spacer(modifier = Modifier.height(18.dp))
 
             erro?.let {
-                Text(
-                    it,
-                    color = Color(0xFFFF8A80),
-                    textAlign = TextAlign.Center,
-                    fontSize = 13.sp
-                )
-
+                Text(it, color = Color(0xFFFF8A80), textAlign = TextAlign.Center, fontSize = 13.sp)
                 Spacer(modifier = Modifier.height(12.dp))
             }
 
@@ -414,11 +355,8 @@ private fun TelaPareamento(
                             erro = when (e.message) {
                                 "FIREBASE_AUTH_REQUIRED" ->
                                     "Autenticação Firebase necessária."
-
                                 else ->
-                                    "Falha ao criar sessão: ${
-                                        e.message ?: "verifique a configuração Firebase"
-                                    }"
+                                    "Falha ao criar sessão: ${e.message ?: "verifique o Firebase"}"
                             }
                         } finally {
                             carregando = false
@@ -426,18 +364,13 @@ private fun TelaPareamento(
                     }
                 }
             ) {
-                Text(
-                    if (carregando) "Criando..." else "Criar sessão e QR Code"
-                )
+                Text(if (carregando) "Criando..." else "Criar sessão e QR Code")
             }
 
             Spacer(modifier = Modifier.height(12.dp))
 
             OutlinedButton(onClick = abrirLeitor) {
-                Text(
-                    "Ler QR Code de outro dispositivo",
-                    color = Azul
-                )
+                Text("Ler QR Code de outro dispositivo", color = Azul)
             }
 
             Spacer(modifier = Modifier.height(8.dp))
@@ -450,31 +383,29 @@ private fun TelaPareamento(
 }
 
 @Composable
-private fun TelaLerQrCode(
-    voltar: () -> Unit
-) {
+private fun TelaLerQrCode(voltar: () -> Unit) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val cliente = remember { FirebaseSignalingClient() }
 
     var codigo by remember { mutableStateOf("") }
     var mensagem by remember {
-        mutableStateOf(
-            "Digite o código de seis dígitos exibido no outro dispositivo."
-        )
+        mutableStateOf("Aponte a câmera para o QR Code ou digite o código de seis dígitos.")
     }
     var erro by remember { mutableStateOf(false) }
+    var cameraAtiva by remember { mutableStateOf(false) }
     var processando by remember { mutableStateOf(false) }
+    var sessaoEncontrada by remember { mutableStateOf<PairingSession?>(null) }
 
     val permissaoCamera = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { concedida ->
-        if (!concedida) {
-            erro = true
-            mensagem =
-                "Permissão da câmera negada. Permita o acesso nas configurações do Android."
+        cameraAtiva = concedida
+        erro = !concedida
+        mensagem = if (concedida) {
+            "Aponte a câmera para o QR Code."
         } else {
-            erro = false
-            mensagem =
-                "Permissão concedida. A leitura automática da câmera ainda não está implementada."
+            "Permissão da câmera negada. Digite o código manualmente ou permita o acesso nas configurações."
         }
     }
 
@@ -488,7 +419,7 @@ private fun TelaLerQrCode(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(horizontal = 24.dp, vertical = 20.dp),
+                .padding(horizontal = 24.dp, vertical = 16.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Text(
@@ -501,81 +432,95 @@ private fun TelaLerQrCode(
             Spacer(modifier = Modifier.height(8.dp))
 
             Text(
-                "Digite o código exibido no outro celular para procurar a sessão.",
+                "Leia o QR Code ou informe o código mostrado no outro dispositivo.",
                 fontSize = 14.sp,
                 color = TextoSecundario,
                 textAlign = TextAlign.Center
             )
 
-            Spacer(modifier = Modifier.height(24.dp))
+            Spacer(modifier = Modifier.height(18.dp))
 
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(180.dp),
-                shape = RoundedCornerShape(22.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = FundoTopo
-                )
-            ) {
-                Column(
+            if (cameraAtiva && codigo.length != 6) {
+                LeitorCamera(
                     modifier = Modifier
-                        .fillMaxSize()
-                        .padding(18.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.Center
+                        .fillMaxWidth()
+                        .height(240.dp),
+                    aoLerCodigo = { valor ->
+                        val codigoLido = extrairCodigoPareamento(valor)
+
+                        if (codigoLido != null && codigo.isEmpty()) {
+                            codigo = codigoLido
+                            cameraAtiva = false
+                            erro = false
+                            mensagem = "QR Code reconhecido. Confira o código e toque em Conectar."
+                        }
+                    },
+                    aoFalhar = { detalhe ->
+                        erro = true
+                        mensagem = detalhe
+                    }
+                )
+            } else {
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(130.dp),
+                    shape = RoundedCornerShape(22.dp),
+                    colors = CardDefaults.cardColors(containerColor = FundoTopo)
                 ) {
-                    Text("▦", fontSize = 58.sp, color = Azul)
-
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    Text(
-                        "Leitor de QR Code",
-                        color = TextoPrincipal,
-                        fontWeight = FontWeight.SemiBold
-                    )
-
-                    Spacer(modifier = Modifier.height(4.dp))
-
-                    Text(
-                        "A leitura automática ainda precisa ser integrada.",
-                        color = TextoSecundario,
-                        fontSize = 12.sp,
-                        textAlign = TextAlign.Center
-                    )
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(14.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center
+                    ) {
+                        Text("▦", fontSize = 42.sp, color = Azul)
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            if (codigo.length == 6) "Código capturado" else "Leitor de QR Code",
+                            color = TextoPrincipal,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
                 }
             }
 
-            Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(10.dp))
 
             OutlinedButton(
                 modifier = Modifier.fillMaxWidth(),
                 onClick = {
-                    val permitido = ContextCompat.checkSelfPermission(
-                        context,
-                        Manifest.permission.CAMERA
-                    ) == PackageManager.PERMISSION_GRANTED
-
-                    if (permitido) {
-                        erro = false
-                        mensagem =
-                            "A permissão da câmera está ativa, mas o leitor ainda não foi implementado."
+                    if (cameraAtiva) {
+                        cameraAtiva = false
                     } else {
-                        permissaoCamera.launch(Manifest.permission.CAMERA)
+                        val permitido = ContextCompat.checkSelfPermission(
+                            context,
+                            Manifest.permission.CAMERA
+                        ) == PackageManager.PERMISSION_GRANTED
+
+                        if (permitido) {
+                            cameraAtiva = true
+                            erro = false
+                            mensagem = "Aponte a câmera para o QR Code."
+                        } else {
+                            permissaoCamera.launch(Manifest.permission.CAMERA)
+                        }
                     }
                 }
             ) {
-                Text("Verificar permissão da câmera", color = Azul)
+                Text(
+                    if (cameraAtiva) "Fechar câmera" else "Ler QR Code com a câmera",
+                    color = Azul
+                )
             }
 
-            Spacer(modifier = Modifier.height(22.dp))
-
+            Spacer(modifier = Modifier.height(16.dp))
             HorizontalDivider(color = Color(0xFF383838))
-
-            Spacer(modifier = Modifier.height(18.dp))
+            Spacer(modifier = Modifier.height(14.dp))
 
             Text(
-                "Digite o código de pareamento",
+                "Ou digite o código de pareamento",
                 color = TextoPrincipal,
                 fontWeight = FontWeight.SemiBold,
                 fontSize = 15.sp
@@ -588,25 +533,25 @@ private fun TelaLerQrCode(
                 onValueChange = { novo ->
                     codigo = novo.filter(Char::isDigit).take(6)
                     erro = false
+                    sessaoEncontrada = null
                     mensagem = "Informe os seis dígitos do código."
                 },
                 modifier = Modifier.fillMaxWidth(),
                 label = { Text("Código de 6 dígitos") },
                 placeholder = { Text("123456") },
                 singleLine = true,
-                keyboardOptions = KeyboardOptions(
-                    keyboardType = KeyboardType.Number
-                ),
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                 colors = OutlinedTextFieldDefaults.colors(
                     focusedTextColor = TextoPrincipal,
                     unfocusedTextColor = TextoPrincipal,
                     focusedBorderColor = Azul,
+                    unfocusedBorderColor = TextoSecundario,
                     focusedLabelColor = Azul,
                     cursorColor = Azul
                 )
             )
 
-            Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(10.dp))
 
             Text(
                 mensagem,
@@ -615,20 +560,49 @@ private fun TelaLerQrCode(
                 textAlign = TextAlign.Center
             )
 
+            sessaoEncontrada?.let {
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    "Sessão localizada: ${it.sessionId}",
+                    color = Azul,
+                    fontSize = 12.sp,
+                    textAlign = TextAlign.Center
+                )
+            }
+
             Spacer(modifier = Modifier.height(12.dp))
 
             Button(
                 modifier = Modifier.fillMaxWidth(),
                 enabled = codigo.length == 6 && !processando,
                 onClick = {
-                    erro = false
-                    mensagem =
-                        "O código foi preenchido, mas a entrada na sessão e a conexão WebRTC ainda não estão implementadas."
+                    scope.launch {
+                        processando = true
+                        erro = false
+                        sessaoEncontrada = null
+                        mensagem = "Procurando sessão..."
+
+                        try {
+                            val sessao = cliente.joinSession(codigo)
+                            sessaoEncontrada = sessao
+                            mensagem = "Sessão localizada. A negociação WebRTC ainda precisa ser integrada."
+                        } catch (e: Exception) {
+                            erro = true
+                            mensagem = when (e.message) {
+                                "SESSION_NOT_FOUND" ->
+                                    "Sessão não encontrada ou código expirado."
+                                "FIREBASE_AUTH_REQUIRED" ->
+                                    "Autenticação Firebase necessária."
+                                else ->
+                                    "Não foi possível localizar a sessão: ${e.message ?: "erro desconhecido"}"
+                            }
+                        } finally {
+                            processando = false
+                        }
+                    }
                 }
             ) {
-                Text(
-                    if (processando) "Conectando..." else "Conectar"
-                )
+                Text(if (processando) "Procurando..." else "Conectar")
             }
 
             Spacer(modifier = Modifier.height(8.dp))
@@ -638,6 +612,133 @@ private fun TelaLerQrCode(
             }
         }
     }
+}
+
+private fun extrairCodigoPareamento(valor: String): String? {
+    val texto = valor.trim()
+
+    if (texto.matches(Regex("^\\d{6}$"))) {
+        return texto
+    }
+
+    return runCatching {
+        val uri = android.net.Uri.parse(texto)
+        val codigoUri = uri.getQueryParameter("code")
+            ?: uri.getQueryParameter("codigo")
+
+        codigoUri
+            ?.filter(Char::isDigit)
+            ?.takeIf { it.length == 6 }
+    }.getOrNull()
+}
+
+@Composable
+private fun LeitorCamera(
+    modifier: Modifier = Modifier,
+    aoLerCodigo: (String) -> Unit,
+    aoFalhar: (String) -> Unit
+) {
+    val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
+    val executor = remember { Executors.newSingleThreadExecutor() }
+    val scanner = remember {
+        val options = BarcodeScannerOptions.Builder()
+            .setBarcodeFormats(Barcode.FORMAT_QR_CODE)
+            .build()
+        BarcodeScanning.getClient(options)
+    }
+
+    var codigoJaLido by remember { mutableStateOf(false) }
+
+    DisposableEffect(Unit) {
+        onDispose {
+            scanner.close()
+            executor.shutdown()
+        }
+    }
+
+    AndroidView(
+        modifier = modifier,
+        factory = { ctx ->
+            val previewView = PreviewView(ctx)
+            previewView.scaleType = PreviewView.ScaleType.FILL_CENTER
+
+            val cameraProviderFuture = ProcessCameraProvider.getInstance(ctx)
+
+            cameraProviderFuture.addListener({
+                try {
+                    val cameraProvider = cameraProviderFuture.get()
+
+                    val preview = Preview.Builder().build().also {
+                        it.surfaceProvider = previewView.surfaceProvider
+                    }
+
+                    val analysis = ImageAnalysis.Builder()
+                        .setBackpressureStrategy(
+                            ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST
+                        )
+                        .build()
+
+                    analysis.setAnalyzer(executor) { imageProxy ->
+                        if (codigoJaLido) {
+                            imageProxy.close()
+                        } else {
+                            val mediaImage = imageProxy.image
+
+                            if (mediaImage == null) {
+                                imageProxy.close()
+                            } else {
+                                val image = InputImage.fromMediaImage(
+                                    mediaImage,
+                                    imageProxy.imageInfo.rotationDegrees
+                                )
+
+                                scanner.process(image)
+                                    .addOnSuccessListener { barcodes ->
+                                        val valor = barcodes
+                                            .firstOrNull { !it.rawValue.isNullOrBlank() }
+                                            ?.rawValue
+
+                                        if (valor != null && !codigoJaLido) {
+                                            val codigo = extrairCodigoPareamento(valor)
+
+                                            if (codigo != null) {
+                                                codigoJaLido = true
+                                                aoLerCodigo(valor)
+                                            } else {
+                                                aoFalhar(
+                                                    "O QR Code não contém um código de pareamento válido."
+                                                )
+                                            }
+                                        }
+                                    }
+                                    .addOnFailureListener {
+                                        aoFalhar("Não foi possível ler o QR Code. Tente novamente.")
+                                    }
+                                    .addOnCompleteListener {
+                                        imageProxy.close()
+                                    }
+                            }
+                        }
+                    }
+
+                    cameraProvider.unbindAll()
+                    cameraProvider.bindToLifecycle(
+                        lifecycleOwner,
+                        CameraSelector.DEFAULT_BACK_CAMERA,
+                        preview,
+                        analysis
+                    )
+                } catch (e: Exception) {
+                    aoFalhar(
+                        "Não foi possível iniciar a câmera: ${e.message ?: "erro desconhecido"}"
+                    )
+                }
+            }, ContextCompat.getMainExecutor(ctx))
+
+            previewView
+        }
+    )
 }
 
 @Composable
@@ -655,9 +756,7 @@ private fun Cabecalho(
         verticalAlignment = Alignment.CenterVertically
     ) {
         Text("‹", fontSize = 32.sp, color = TextoPrincipal)
-
         Spacer(modifier = Modifier.width(16.dp))
-
         Text(
             titulo,
             fontSize = 18.sp,
@@ -684,11 +783,7 @@ private fun LinhaConfiguracao(
             modifier = Modifier.size(42.dp),
             contentAlignment = Alignment.Center
         ) {
-            Text(
-                opcao.icone,
-                fontSize = 28.sp,
-                color = TextoPrincipal
-            )
+            Text(opcao.icone, fontSize = 28.sp, color = TextoPrincipal)
         }
 
         Spacer(modifier = Modifier.width(24.dp))
@@ -703,7 +798,6 @@ private fun LinhaConfiguracao(
 
             if (opcao.descricao.isNotBlank()) {
                 Spacer(modifier = Modifier.height(4.dp))
-
                 Text(
                     opcao.descricao,
                     fontSize = 12.sp,
@@ -725,7 +819,6 @@ private fun TelaOpcao(
             .background(Fundo)
     ) {
         Cabecalho(titulo, voltar)
-
         Spacer(modifier = Modifier.height(24.dp))
 
         Text(
@@ -740,41 +833,18 @@ private fun TelaOpcao(
 
         Text(
             text = when (titulo) {
-                "Idiomas" ->
-                    "As opções de idioma e layout serão implementadas aqui."
-
-                "Temas" ->
-                    "A personalização de cores e aparência será implementada aqui."
-
-                "Digitação" ->
-                    "As preferências de digitação serão implementadas aqui."
-
-                "Emoji" ->
-                    "As opções de emoji serão implementadas aqui."
-
-                "Entrada avançada" ->
-                    "Os recursos adicionais serão implementados aqui."
-
-                "Layout e teclas" ->
-                    "A personalização do layout será implementada aqui."
-
-                "Som e vibração" ->
-                    "As opções de som e vibração serão implementadas aqui."
-
-                "Privacidade" ->
-                    "Aqui ficarão as informações de privacidade do teclado."
-
-                "Conta" ->
-                    "As opções de conta serão implementadas aqui."
-
-                "Ajuda e Feedback" ->
-                    "As informações de ajuda serão adicionadas aqui."
-
-                "Sobre o Teclado P2P V2" ->
-                    "Teclado P2P V2\nVersão 1.0"
-
-                else ->
-                    "Configurações disponíveis em breve."
+                "Idiomas" -> "As opções de idioma e layout serão implementadas aqui."
+                "Temas" -> "A personalização de cores e aparência será implementada aqui."
+                "Digitação" -> "As preferências de digitação serão implementadas aqui."
+                "Emoji" -> "As opções de emoji serão implementadas aqui."
+                "Entrada avançada" -> "Os recursos adicionais serão implementados aqui."
+                "Layout e teclas" -> "A personalização do layout será implementada aqui."
+                "Som e vibração" -> "As opções de som e vibração serão implementadas aqui."
+                "Privacidade" -> "Aqui ficarão as informações de privacidade do teclado."
+                "Conta" -> "As opções de conta serão implementadas aqui."
+                "Ajuda e Feedback" -> "As informações de ajuda serão adicionadas aqui."
+                "Sobre o Teclado P2P V2" -> "Teclado P2P V2\nVersão 1.0"
+                else -> "Configurações disponíveis em breve."
             },
             modifier = Modifier.padding(horizontal = 24.dp),
             fontSize = 15.sp,
