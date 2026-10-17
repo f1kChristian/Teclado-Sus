@@ -23,7 +23,7 @@ kotlinOptions {
 }
 
 dependencies {
-implementation(platform("com.google.firebase:firebase-bom:34.19.0"))
+implementation(platform("com.google.firebase:firebase-bom:33.7.0"))
 implementation("com.google.firebase:firebase-database")
 implementation("com.google.firebase:firebase-auth")
 implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
