@@ -1,0 +1,39 @@
+{
+  "rules": {
+    ".read": false,
+    ".write": false,
+    "pairingSessions": {
+      ".indexOn": ["code", "expiresAt"],
+      ".read": "auth != null && query.orderByChild === 'code' && query.equalTo != null && query.equalTo.matches(/^[0-9]{6}$/)",
+      "$sessionId": {
+        ".read": "auth != null && (data.child('ownerUid').val() === auth.uid || data.child('joinedUid').val() === auth.uid)",
+        ".write": "auth != null && ((!data.exists() && newData.exists() && newData.child('ownerUid').val() === auth.uid && newData.child('status').val() === 'waiting' && newData.child('code').val().matches(/^[0-9]{6}$/) && newData.child('expiresAt').val() > now) || (data.child('ownerUid').val() === auth.uid && !newData.exists()) || (data.child('status').val() === 'waiting' && newData.child('status').val() === 'joined' && newData.child('joinedUid').val() === auth.uid && newData.child('ownerUid').val() === data.child('ownerUid').val() && newData.child('code').val() === data.child('code').val() && newData.child('expiresAt').val() === data.child('expiresAt').val() && newData.child('sessionId').val() === data.child('sessionId').val()))",
+        "sessionId": {
+          ".validate": "newData.isString() && newData.val() === $sessionId"
+        },
+        "ownerUid": {
+          ".validate": "newData.isString() && newData.val().length > 0"
+        },
+        "joinedUid": {
+          ".validate": "newData.isString() && newData.val().length > 0"
+        },
+        "code": {
+          ".validate": "newData.isString() && newData.val().matches(/^[0-9]{6}$/)"
+        },
+        "expiresAt": {
+          ".validate": "newData.isNumber()"
+        },
+        "status": {
+          ".validate": "newData.val() === 'waiting' || newData.val() === 'joined'"
+        },
+        "messages": {
+          "$messageId": {
+            ".read": "auth != null && (root.child('pairingSessions').child($sessionId).child('ownerUid').val() === auth.uid || root.child('pairingSessions').child($sessionId).child('joinedUid').val() === auth.uid)",
+            ".write": "auth != null && (root.child('pairingSessions').child($sessionId).child('ownerUid').val() === auth.uid || root.child('pairingSessions').child($sessionId).child('joinedUid').val() === auth.uid) && newData.child('senderUid').val() === auth.uid && newData.child('payload').isString() && newData.child('payload').val().length <= 262144",
+            ".validate": "newData.hasChildren(['senderUid', 'payload', 'createdAt'])"
+          }
+        }
+      }
+    }
+  }
+}
