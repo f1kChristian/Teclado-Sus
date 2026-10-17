@@ -80,7 +80,7 @@ class FirebaseSignalingClient : SignalingClient {
         suspendCancellableCoroutine<Boolean> { continuation ->
             codes.child(code).runTransaction(object : Transaction.Handler {
                 override fun doTransaction(currentData: MutableData): Transaction.Result {
-                    if (currentData.exists()) return Transaction.abort()
+                    if (currentData.value != null) return Transaction.abort()
                     currentData.value = mapOf(
                         "sessionId" to sessionId,
                         "expiresAt" to expiresAt,
@@ -125,7 +125,7 @@ class FirebaseSignalingClient : SignalingClient {
         suspendCancellableCoroutine<Unit> { continuation ->
             codes.child(code).runTransaction(object : Transaction.Handler {
                 override fun doTransaction(currentData: MutableData): Transaction.Result {
-                    if (!currentData.exists()) return Transaction.abort()
+                    if (currentData.value == null) return Transaction.abort()
                     if (currentData.child("sessionId").getValue(String::class.java) != sessionId) {
                         return Transaction.abort()
                     }
