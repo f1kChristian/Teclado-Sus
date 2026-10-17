@@ -615,8 +615,12 @@ private fun CartaoRegistro(registro: RegistroHistorico) {
 
 @Composable
 private fun TelaPareamento(voltar: () -> Unit, abrirLeitor: () -> Unit) {
+    val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val cliente = remember { FirebaseSignalingClient() }
+    val coordinator = remember { WebRtcPairingCoordinator(context, cliente) }
+    val p2pStatus by coordinator.status.collectAsState()
+    DisposableEffect(coordinator) { onDispose { coordinator.close() } }
 
     var sessao by remember { mutableStateOf<PairingSession?>(null) }
     var carregando by remember { mutableStateOf(false) }
@@ -664,6 +668,11 @@ private fun TelaPareamento(voltar: () -> Unit, abrirLeitor: () -> Unit) {
                 sessao?.expiresAtMillis?.let {
                     Text("Expira em ${DateFormat.getTimeInstance().format(Date(it))}", color = TextoSecundario, fontSize = 12.sp)
                 }
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(p2pStatus, color = TextoSecundario, fontSize = 12.sp, textAlign = TextAlign.Center)
+                TextButton(onClick = { coordinator.testDataChannel() }) {
+                    Text("Testar canal de dados", color = Azul)
+                }
             } else {
                 Box(
                     modifier = Modifier.size(240.dp).background(Color.White, RoundedCornerShape(12.dp)),
@@ -687,7 +696,9 @@ private fun TelaPareamento(voltar: () -> Unit, abrirLeitor: () -> Unit) {
                         erro = null
                         sessao = null
                         try {
-                            sessao = cliente.createSession()
+                            val novaSessao = cliente.createSession()
+                            sessao = novaSessao
+                            coordinator.start(novaSessao, isOfferer = true)
                         } catch (e: Exception) {
                             erro = if (e.message == "FIREBASE_AUTH_REQUIRED")
                                 "Autenticação Firebase necessária."
@@ -716,6 +727,9 @@ private fun TelaLerQrCode(voltar: () -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val cliente = remember { FirebaseSignalingClient() }
+    val coordinator = remember { WebRtcPairingCoordinator(context, cliente) }
+    val p2pStatus by coordinator.status.collectAsState()
+    DisposableEffect(coordinator) { onDispose { coordinator.close() } }
 
     var codigo by remember { mutableStateOf("") }
     var mensagem by remember {
@@ -853,6 +867,10 @@ private fun TelaLerQrCode(voltar: () -> Unit) {
             sessaoEncontrada?.let {
                 Spacer(modifier = Modifier.height(8.dp))
                 Text("Sessão localizada: ${it.sessionId}", color = Azul, fontSize = 12.sp, textAlign = TextAlign.Center)
+                Text(p2pStatus, color = TextoSecundario, fontSize = 12.sp, textAlign = TextAlign.Center)
+                TextButton(onClick = { coordinator.testDataChannel() }) {
+                    Text("Testar canal de dados", color = Azul)
+                }
             }
 
             Spacer(modifier = Modifier.height(12.dp))
@@ -868,7 +886,8 @@ private fun TelaLerQrCode(voltar: () -> Unit) {
                         try {
                             val sessao = cliente.joinSession(codigo)
                             sessaoEncontrada = sessao
-                            mensagem = "Sessão localizada. A negociação WebRTC ainda precisa ser integrada."
+                            coordinator.start(sessao, isOfferer = false)
+                            mensagem = "Sessão aceita. Iniciando conexão P2P…"
                         } catch (e: Exception) {
                             erro = true
                             mensagem = when (e.message) {
