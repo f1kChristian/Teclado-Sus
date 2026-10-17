@@ -25,7 +25,6 @@ interface SignalingClient {
     suspend fun createSession(): PairingSession
     suspend fun joinSession(sessionCode: String): PairingSession
     suspend fun send(sessionId: String, message: String)
-    suspend fun messages(sessionId: String, onMessage: (String) -> Unit)
     fun observeMessages(
         sessionId: String,
         onMessage: (String) -> Unit,
@@ -186,10 +185,6 @@ class FirebaseSignalingClient : SignalingClient {
         ).await()
     }
 
-    override suspend fun messages(sessionId: String, onMessage: (String) -> Unit) {
-        ensureAuthenticated()
-        observeMessages(sessionId, onMessage)
-    }
 
     override fun observeMessages(
         sessionId: String,
