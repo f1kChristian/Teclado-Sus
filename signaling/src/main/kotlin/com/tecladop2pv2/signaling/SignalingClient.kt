@@ -50,25 +50,59 @@ class FirebaseSignalingClient : SignalingClient {
 
     override suspend fun createSession(): PairingSession {
         ensureAuthenticated()
-        val sessionId = UUID.randomUUID().toString()
-        val code = (100000..999999).random().toString()
-        val expiresAt = System.currentTimeMillis() + SESSION_DURATION_MS
         val uid = auth.currentUser?.uid ?: error("FIREBASE_AUTH_REQUIRED")
-        sessions.child(sessionId).setValue(
-            mapOf(
-                "sessionId" to sessionId,
-                "code" to code,
-                "ownerUid" to uid,
-                "createdAt" to ServerValue.TIMESTAMP,
-                "expiresAt" to expiresAt,
-                "status" to "waiting"
-            )
-        ).await()
-        codes.child(code).setValue(
-            mapOf("sessionId" to sessionId, "expiresAt" to expiresAt, "status" to "waiting")
-        ).await()
-        return PairingSession(sessionId, code, expiresAt)
+
+        repeat(MAX_CODE_ATTEMPTS) {
+            val sessionId = UUID.randomUUID().toString()
+            val code = (100000..999999).random().toString()
+            val expiresAt = System.currentTimeMillis() + SESSION_DURATION_MS
+            if (codes.child(code).get().await().exists()) return@repeat
+
+            sessions.child(sessionId).setValue(
+                mapOf(
+                    "sessionId" to sessionId,
+                    "code" to code,
+                    "ownerUid" to uid,
+                    "createdAt" to ServerValue.TIMESTAMP,
+                    "expiresAt" to expiresAt,
+                    "status" to "waiting"
+                )
+            ).await()
+
+            if (reserveCode(code, sessionId, expiresAt)) {
+                return PairingSession(sessionId, code, expiresAt)
+            }
+            sessions.child(sessionId).removeValue().await()
+        }
+        error("PAIRING_CODE_GENERATION_FAILED")
     }
+
+    private suspend fun reserveCode(code: String, sessionId: String, expiresAt: Long) =
+        suspendCancellableCoroutine<Boolean> { continuation ->
+            codes.child(code).runTransaction(object : Transaction.Handler {
+                override fun doTransaction(currentData: MutableData): Transaction.Result {
+                    if (currentData.exists()) return Transaction.abort()
+                    currentData.value = mapOf(
+                        "sessionId" to sessionId,
+                        "expiresAt" to expiresAt,
+                        "status" to "waiting"
+                    )
+                    return Transaction.success(currentData)
+                }
+
+                override fun onComplete(
+                    error: DatabaseError?,
+                    committed: Boolean,
+                    currentData: DataSnapshot?
+                ) {
+                    if (!continuation.isActive) return
+                    when {
+                        error != null -> continuation.resumeWithException(error.toException())
+                        else -> continuation.resume(committed)
+                    }
+                }
+            }, false)
+        }
 
     override suspend fun joinSession(sessionCode: String): PairingSession {
         ensureAuthenticated()
@@ -201,5 +235,6 @@ class FirebaseSignalingClient : SignalingClient {
     companion object {
         private const val SESSION_DURATION_MS = 5 * 60 * 1000L
         private const val MAX_SIGNAL_MESSAGE_BYTES = 256 * 1024
+        private const val MAX_CODE_ATTEMPTS = 5
     }
 }
