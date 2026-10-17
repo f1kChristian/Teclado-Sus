@@ -41,6 +41,7 @@ class FirebaseSignalingClient : SignalingClient {
         "https://tecladop2p-default-rtdb.firebaseio.com/"
     )
     private val sessions = database.getReference("pairingSessions")
+    private val codes = database.getReference("pairingCodes")
 
     private suspend fun ensureAuthenticated() {
         if (auth.currentUser == null) auth.signInAnonymously().await()
@@ -63,6 +64,9 @@ class FirebaseSignalingClient : SignalingClient {
                 "status" to "waiting"
             )
         ).await()
+        codes.child(code).setValue(
+            mapOf("sessionId" to sessionId, "expiresAt" to expiresAt, "status" to "waiting")
+        ).await()
         return PairingSession(sessionId, code, expiresAt)
     }
 
@@ -70,25 +74,26 @@ class FirebaseSignalingClient : SignalingClient {
         ensureAuthenticated()
         require(sessionCode.matches(Regex("^\\d{6}$"))) { "INVALID_PAIRING_CODE" }
 
-        val matches = sessions.orderByChild("code").equalTo(sessionCode).get().await()
-        val match = matches.children.firstOrNull() ?: error("SESSION_NOT_FOUND")
-        val sessionId = match.child("sessionId").getValue(String::class.java)
-            ?: match.key ?: error("INVALID_SESSION")
-        val expiresAt = match.child("expiresAt").getValue(Long::class.java)
+        val codeRef = codes.child(sessionCode)
+        val codeSnapshot = codeRef.get().await()
+        if (!codeSnapshot.exists()) error("SESSION_NOT_FOUND")
+        val sessionId = codeSnapshot.child("sessionId").getValue(String::class.java)
+            ?: error("INVALID_SESSION")
+        val expiresAt = codeSnapshot.child("expiresAt").getValue(Long::class.java)
             ?: error("INVALID_SESSION")
         if (expiresAt <= System.currentTimeMillis()) error("SESSION_EXPIRED")
 
         val uid = auth.currentUser?.uid ?: error("FIREBASE_AUTH_REQUIRED")
-        claimSession(sessionId, sessionCode, uid)
+        claimCode(sessionCode, sessionId, uid)
         return PairingSession(sessionId, sessionCode, expiresAt)
     }
 
-    private suspend fun claimSession(sessionId: String, code: String, uid: String) =
+    private suspend fun claimCode(code: String, sessionId: String, uid: String) =
         suspendCancellableCoroutine<Unit> { continuation ->
-            sessions.child(sessionId).runTransaction(object : Transaction.Handler {
+            codes.child(code).runTransaction(object : Transaction.Handler {
                 override fun doTransaction(currentData: MutableData): Transaction.Result {
                     if (!currentData.exists()) return Transaction.abort()
-                    if (currentData.child("code").getValue(String::class.java) != code) {
+                    if (currentData.child("sessionId").getValue(String::class.java) != sessionId) {
                         return Transaction.abort()
                     }
                     val expiry = currentData.child("expiresAt").getValue(Long::class.java)
@@ -131,7 +136,9 @@ class FirebaseSignalingClient : SignalingClient {
         val uid = auth.currentUser?.uid ?: error("FIREBASE_AUTH_REQUIRED")
         val session = sessions.child(sessionId).get().await()
         val ownerUid = session.child("ownerUid").getValue(String::class.java)
-        val joinedUid = session.child("joinedUid").getValue(String::class.java)
+        val code = session.child("code").getValue(String::class.java) ?: error("INVALID_SESSION")
+        val codeSnapshot = codes.child(code).get().await()
+        val joinedUid = codeSnapshot.child("joinedUid").getValue(String::class.java)
         val expiry = session.child("expiresAt").getValue(Long::class.java) ?: 0L
         require(expiry > System.currentTimeMillis()) { "SESSION_EXPIRED" }
         require(uid == ownerUid || uid == joinedUid) { "SESSION_ACCESS_DENIED" }
@@ -186,6 +193,8 @@ class FirebaseSignalingClient : SignalingClient {
         require(session.child("ownerUid").getValue(String::class.java) == uid) {
             "SESSION_CANCEL_NOT_OWNER"
         }
+        val code = session.child("code").getValue(String::class.java) ?: error("INVALID_SESSION")
+        codes.child(code).removeValue().await()
         sessions.child(sessionId).removeValue().await()
     }
 
