@@ -33,12 +33,6 @@ android {
 
 dependencies {
     implementation(project(":core:model"))
-    implementation("androidx.camera:camera-camera2:1.4.2")
-    implementation("androidx.camera:camera-core:1.4.2")
-    implementation("androidx.camera:camera-lifecycle:1.4.2")
-    implementation("androidx.camera:camera-view:1.4.2")
-    implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.7")
-    implementation("com.google.mlkit:barcode-scanning:17.3.0")
     implementation(project(":core:database"))
     implementation(project(":core:security"))
     implementation(project(":feature:keyboard"))
@@ -59,13 +53,22 @@ dependencies {
     implementation(libs.lifecycle.viewmodel.compose)
     implementation(libs.coroutines.android)
 
-    implementation("androidx.room:room-runtime:2.6.1")
-    implementation("androidx.room:room-ktx:2.6.1")
+    implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.7")
+    implementation("androidx.camera:camera-camera2:1.4.2")
+    implementation("androidx.camera:camera-core:1.4.2")
+    implementation("androidx.camera:camera-lifecycle:1.4.2")
+    implementation("androidx.camera:camera-view:1.4.2")
+    implementation("com.google.mlkit:barcode-scanning:17.3.0")
     implementation("com.google.zxing:core:3.5.3")
 
+    implementation("androidx.room:room-runtime:2.6.1")
+    implementation("androidx.room:room-ktx:2.6.1")
+
     implementation(platform("com.google.firebase:firebase-bom:33.7.0"))
-    implementation("com.google.firebase:firebase-auth:23.1.0")
-    implementation("com.google.firebase:firebase-database:21.0.0")
+    implementation("com.google.firebase:firebase-auth")
+    implementation("com.google.firebase:firebase-database")
+    implementation("com.google.firebase:firebase-firestore")
+    implementation("com.google.firebase:firebase-functions")
 
     debugImplementation(libs.compose.ui.tooling)
 }
