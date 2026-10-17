@@ -54,7 +54,6 @@ dependencies {
     implementation(libs.lifecycle.viewmodel.compose)
     implementation(libs.coroutines.android)
 
-    implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.7")
     implementation("androidx.camera:camera-camera2:1.4.2")
     implementation("androidx.camera:camera-core:1.4.2")
     implementation("androidx.camera:camera-lifecycle:1.4.2")
