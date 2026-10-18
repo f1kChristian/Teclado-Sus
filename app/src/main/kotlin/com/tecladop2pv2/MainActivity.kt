@@ -702,9 +702,9 @@ private fun PainelSincronizacaoHistorico(
                             enviados++
                         }
                         resultado = if (enviados == batches.size) {
-                            "Enviados até \${batches.sumOf { JSONArray(it).length() }} registros. O outro aparelho deve confirmar o recebimento."
+                            "Lotes enviados; confira a aba ONLINE no outro aparelho."
                         } else {
-                            "Envio interrompido após \${enviados * 10} registros; verifique a conexão."
+                            "Envio interrompido após ${enviados * 10} registros; verifique a conexão."
                         }
                     }
                 }
