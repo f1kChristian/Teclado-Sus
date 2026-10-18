@@ -9,6 +9,8 @@ import com.tecladop2pv2.webrtc.PeerConnectionManager
 import com.tecladop2pv2.webrtc.WebRtcConnectionState
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
@@ -23,6 +25,7 @@ import org.webrtc.PeerConnectionFactory
 import org.webrtc.SessionDescription
 import java.io.Closeable
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.UUID
 
 /**
  * Coordinates Firebase signaling and a WebRTC data channel for an explicitly initiated pairing.
@@ -41,6 +44,9 @@ class WebRtcPairingCoordinator(
     private var session: PairingSession? = null
     private var offerer = false
     private var remoteDescriptionSet = false
+    private var currentAttemptId: String? = null
+    private var retryJob: Job? = null
+    private var retryAttempt = 0
     private val pendingCandidates = mutableListOf<IceCandidate>()
 
     private val _status = MutableStateFlow("Aguardando início do pareamento.")
@@ -55,6 +61,36 @@ class WebRtcPairingCoordinator(
         session = pairingSession
         offerer = isOfferer
 
+        listener = signaling.observeMessages(
+            sessionId = pairingSession.sessionId,
+            onMessage = { raw -> handleSignal(raw) },
+            onError = { error ->
+                _status.value = "Erro na sinalização: ${error.message ?: "desconhecido"}"
+                scheduleReconnect()
+            }
+        )
+        _status.value = "Negociando conexão segura entre os dispositivos…"
+
+        scope.launch {
+            manager.state.collect { state ->
+                _connectionState.value = state
+                when (state) {
+                    WebRtcConnectionState.CONNECTED -> {
+                        retryAttempt = 0
+                        retryJob?.cancel()
+                        retryJob = null
+                    }
+                    WebRtcConnectionState.DISCONNECTED,
+                    WebRtcConnectionState.FAILED -> scheduleReconnect()
+                    else -> Unit
+                }
+            }
+        }
+
+        if (offerer) beginOfferAttempt() else createPeerConnection()
+    }
+
+    private fun createPeerConnection(): Boolean {
         val created = manager.createConnection(
             onIceCandidate = { candidate ->
                 sendSignal(
@@ -69,30 +105,72 @@ class WebRtcPairingCoordinator(
         )
         if (!created) {
             _status.value = "Não foi possível criar a conexão WebRTC."
+            return false
+        }
+        return true
+    }
+
+    /** The offerer owns negotiation IDs; each retry creates a fresh WebRTC negotiation. */
+    private fun beginOfferAttempt() {
+        if (closed.get() || !offerer) return
+        val current = session ?: return
+        if (System.currentTimeMillis() >= current.expiresAtMillis) {
+            _status.value = "A sessão de pareamento expirou. Gere um novo QR Code para reconectar."
             return
         }
 
-        if (offerer) manager.createDataChannel()
-        listener = signaling.observeMessages(
-            sessionId = pairingSession.sessionId,
-            onMessage = { raw -> handleSignal(raw) },
-            onError = { error -> _status.value = "Erro na sinalização: ${error.message ?: "desconhecido"}" }
-        )
-        _status.value = "Negociando conexão segura entre os dispositivos…"
-
-        if (offerer) {
-            manager.createOffer(
-                onCreated = { description ->
-                    sendSignal(
-                        JSONObject().put("type", "offer").put("sdp", description.description)
-                    )
-                },
-                onError = { error -> _status.value = "Falha ao criar oferta: $error" }
-            )
+        retryJob?.cancel()
+        retryJob = null
+        currentAttemptId = UUID.randomUUID().toString()
+        remoteDescriptionSet = false
+        synchronized(pendingCandidates) { pendingCandidates.clear() }
+        if (!createPeerConnection()) {
+            scheduleReconnect()
+            return
         }
-        scope.launch {
-            manager.state.collect { state ->
-                _connectionState.value = state
+        manager.createDataChannel()
+        _status.value = "Tentando reconectar automaticamente…"
+        manager.createOffer(
+            onCreated = { description ->
+                sendSignal(
+                    JSONObject().put("type", "offer").put("sdp", description.description)
+                )
+            },
+            onError = { error ->
+                _status.value = "Falha ao criar oferta: $error"
+                scheduleReconnect()
+            }
+        )
+    }
+
+    private fun scheduleReconnect() {
+        if (closed.get() || retryJob?.isActive == true) return
+        retryJob = scope.launch {
+            val waitMs = (2_000L * (1L shl retryAttempt.coerceAtMost(4))).coerceAtMost(30_000L)
+            delay(waitMs)
+            if (closed.get()) return@launch
+            if (_connectionState.value == WebRtcConnectionState.CONNECTED) {
+                retryAttempt = 0
+                return@launch
+            }
+            val current = session ?: return@launch
+            if (System.currentTimeMillis() >= current.expiresAtMillis) {
+                _status.value = "A sessão de pareamento expirou. Gere um novo QR Code para reconectar."
+                return@launch
+            }
+            retryAttempt = (retryAttempt + 1).coerceAtMost(5)
+            if (offerer) {
+                beginOfferAttempt()
+            } else {
+                currentAttemptId = null
+                remoteDescriptionSet = false
+                synchronized(pendingCandidates) { pendingCandidates.clear() }
+                if (createPeerConnection()) {
+                    _status.value = "Conexão perdida; aguardando nova negociação do dispositivo pareado…"
+                    sendSignal(JSONObject().put("type", "reconnect_request"))
+                } else {
+                    scheduleReconnect()
+                }
             }
         }
     }
@@ -103,26 +181,46 @@ class WebRtcPairingCoordinator(
             return
         }
         when (json.optString("type")) {
+            "reconnect_request" -> {
+                if (offerer) beginOfferAttempt()
+            }
             "offer" -> {
                 if (offerer) return
                 val sdp = json.optString("sdp").takeIf { it.isNotBlank() } ?: return
+                val incomingAttempt = json.optString("attemptId").takeIf { it.isNotBlank() } ?: return
+                if (incomingAttempt != currentAttemptId) {
+                    val hadAttempt = currentAttemptId != null
+                    currentAttemptId = incomingAttempt
+                    remoteDescriptionSet = false
+                    synchronized(pendingCandidates) { pendingCandidates.clear() }
+                    if (hadAttempt && !createPeerConnection()) return
+                }
                 setRemoteDescription(SessionDescription(SessionDescription.Type.OFFER, sdp)) {
                     manager.createAnswer(
                         onCreated = { answer ->
                             sendSignal(JSONObject().put("type", "answer").put("sdp", answer.description))
                         },
-                        onError = { error -> _status.value = "Falha ao criar resposta: $error" }
+                        onError = { error ->
+                            _status.value = "Falha ao criar resposta: $error"
+                            scheduleReconnect()
+                        }
                     )
                 }
             }
             "answer" -> {
                 if (!offerer) return
+                val incomingAttempt = json.optString("attemptId")
+                if (incomingAttempt.isBlank() || incomingAttempt != currentAttemptId) return
                 val sdp = json.optString("sdp").takeIf { it.isNotBlank() } ?: return
                 setRemoteDescription(SessionDescription(SessionDescription.Type.ANSWER, sdp)) {
                     _status.value = "Resposta recebida; estabelecendo conexão…"
                 }
             }
             "ice" -> {
+                val incomingAttempt = json.optString("attemptId").takeIf { it.isNotBlank() } ?: return
+                if (offerer && incomingAttempt != currentAttemptId) return
+                if (!offerer && currentAttemptId == null) currentAttemptId = incomingAttempt
+                if (incomingAttempt != currentAttemptId) return
                 val candidateText = json.optString("candidate").takeIf { it.isNotBlank() } ?: return
                 val candidate = IceCandidate(
                     json.optString("sdpMid").takeIf { it.isNotBlank() },
@@ -160,8 +258,10 @@ class WebRtcPairingCoordinator(
 
     private fun sendSignal(json: JSONObject) {
         val current = session ?: return
+        currentAttemptId?.let { json.put("attemptId", it) }
+        val payload = json.toString()
         scope.launch {
-            runCatching { signaling.send(current.sessionId, json.toString()) }
+            runCatching { signaling.send(current.sessionId, payload) }
                 .onFailure { _status.value = "Falha ao enviar sinalização: ${it.message ?: "erro"}" }
         }
     }
@@ -223,6 +323,8 @@ class WebRtcPairingCoordinator(
 
     override fun close() {
         if (!closed.compareAndSet(false, true)) return
+        retryJob?.cancel()
+        retryJob = null
         runCatching { listener?.close() }
         listener = null
         manager.close()
