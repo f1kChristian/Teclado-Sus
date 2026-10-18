@@ -23,6 +23,7 @@ import org.json.JSONObject
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import java.util.UUID
 import kotlin.math.abs
 
 class TecladoInputMethodService : InputMethodService() {
@@ -41,6 +42,7 @@ class TecladoInputMethodService : InputMethodService() {
     private var simbolos = false
 
     private val textoBruto = StringBuilder()
+    private var idRegistroBruto: String? = null
 
     // A camada e as alternativas ficam na mesma janela do teclado.
     private var camadaTeclado: FrameLayout? = null
@@ -276,17 +278,72 @@ class TecladoInputMethodService : InputMethodService() {
             modoBruto() &&
             !campoSensivel()
         ) {
-            // Salva cada caractere imediatamente, sem esperar Enter ou a saída do campo.
-            // Registros do tipo "tecla" permanecem locais e não entram na sincronização.
             textoBruto.append(caractere)
-            salvarRegistro(caractere, "tecla")
+            atualizarRegistroBruto()
         }
     }
 
+    /**
+     * Mantém uma única entrada local por sessão de digitação bruta.
+     * O registro é atualizado em vez de criar uma entrada para cada tecla.
+     */
+    private fun atualizarRegistroBruto() {
+        if (!registroAtivo() || campoSensivel()) return
+
+        val lista = try {
+            JSONArray(preferencias.getString("registros", "[]"))
+        } catch (_: Exception) {
+            JSONArray()
+        }
+
+        var id = idRegistroBruto
+        var indice = -1
+        if (id != null) {
+            for (i in 0 until lista.length()) {
+                if (lista.optJSONObject(i)?.optString("brutoId") == id) {
+                    indice = i
+                    break
+                }
+            }
+        }
+
+        if (textoBruto.isEmpty()) {
+            if (indice >= 0) lista.remove(indice)
+            preferencias.edit().putString("registros", lista.toString()).apply()
+            idRegistroBruto = null
+            return
+        }
+
+        if (id == null) {
+            id = UUID.randomUUID().toString()
+            idRegistroBruto = id
+        }
+
+        val registro = JSONObject().apply {
+            put("brutoId", id)
+            put("texto", textoBruto.toString())
+            put("tipo", "tecla")
+            put("aplicativo", currentInputEditorInfo?.packageName ?: "Aplicativo desconhecido")
+            put("data", SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date()))
+        }
+
+        if (indice >= 0) {
+            lista.put(indice, registro)
+        } else {
+            lista.put(registro)
+        }
+
+        val limite = JSONArray()
+        val inicio = (lista.length() - 500).coerceAtLeast(0)
+        for (i in inicio until lista.length()) {
+            limite.put(lista.getJSONObject(i))
+        }
+        preferencias.edit().putString("registros", limite.toString()).apply()
+    }
+
     private fun fecharBufferBruto() {
-        // Os caracteres já foram persistidos individualmente em adicionarAoBuffer().
-        // Limpa apenas o buffer em memória para não duplicar o texto no histórico.
         textoBruto.clear()
+        idRegistroBruto = null
     }
 
     private fun registrarMensagem(texto: String) {
@@ -299,7 +356,9 @@ class TecladoInputMethodService : InputMethodService() {
         }
 
         if (modoBruto()) {
+            // O texto já está salvo como uma única entrada bruta local.
             fecharBufferBruto()
+            return
         }
 
         salvarRegistro(texto.trim(), "mensagem")
@@ -950,17 +1009,14 @@ class TecladoInputMethodService : InputMethodService() {
             "⌫" -> {
                 ic.deleteSurroundingText(1, 0)
 
-                if (registroAtivo() && modoBruto() && !sensivel) {
-                    salvarRegistro("⌫", "tecla")
-                }
-
                 if (
+                    registroAtivo() &&
                     modoBruto() &&
+                    !sensivel &&
                     textoBruto.isNotEmpty()
                 ) {
-                    textoBruto.deleteCharAt(
-                        textoBruto.length - 1
-                    )
+                    textoBruto.deleteCharAt(textoBruto.length - 1)
+                    atualizarRegistroBruto()
                 }
             }
 
