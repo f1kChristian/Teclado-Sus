@@ -699,10 +699,11 @@ private fun PainelSincronizacaoHistorico(
                             if (!coordinator.sendHistoryBatch(batch)) break
                             enviados++
                         }
+                        val registrosEnviados = batches.take(enviados).sumOf { JSONArray(it).length() }
                         resultado = if (enviados == batches.size) {
                             "Lotes enviados; confira a aba ONLINE no outro aparelho."
                         } else {
-                            "Envio interrompido após ${enviados * 10} registros; verifique a conexão."
+                            "Envio interrompido após $registrosEnviados registros; verifique a conexão."
                         }
                     }
                 }
