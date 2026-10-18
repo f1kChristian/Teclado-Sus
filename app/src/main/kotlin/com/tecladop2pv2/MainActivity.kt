@@ -614,6 +614,101 @@ private fun CartaoRegistro(registro: RegistroHistorico) {
 }
 
 @Composable
+
+@Composable
+private fun PainelSincronizacaoHistorico(
+    context: Context,
+    coordinator: WebRtcPairingCoordinator
+) {
+    var consentimento by remember(coordinator) { mutableStateOf(false) }
+    var resultado by remember(coordinator) { mutableStateOf("O compartilhamento começa desativado.") }
+    val consentimentoRemoto by coordinator.remoteHistoryConsent.collectAsState()
+    val estadoConexao by coordinator.connectionState.collectAsState()
+
+    DisposableEffect(coordinator, context) {
+        coordinator.onHistoryBatchReceived = { batch ->
+            HistorySyncStore.mergeIncoming(context, batch)
+        }
+        onDispose { coordinator.onHistoryBatchReceived = null }
+    }
+    LaunchedEffect(coordinator, consentimento) {
+        coordinator.setHistoryConsent(consentimento)
+    }
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = FundoTopo),
+        shape = RoundedCornerShape(14.dp)
+    ) {
+        Column(modifier = Modifier.fillMaxWidth().padding(12.dp)) {
+            Text(
+                "Sincronização do histórico",
+                color = TextoPrincipal,
+                fontWeight = FontWeight.Bold,
+                fontSize = 14.sp
+            )
+            Text(
+                "Somente mensagens concluídas; eventos de teclas brutas não são enviados. Cada aparelho precisa autorizar.",
+                color = TextoSecundario,
+                fontSize = 11.sp,
+                lineHeight = 15.sp
+            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    "Permitir enviar e receber",
+                    color = TextoPrincipal,
+                    fontSize = 12.sp,
+                    modifier = Modifier.weight(1f)
+                )
+                Switch(
+                    checked = consentimento,
+                    onCheckedChange = {
+                        consentimento = it
+                        resultado = if (it) "Aguardando autorização do outro aparelho."
+                        else "Compartilhamento desativado."
+                    }
+                )
+            }
+            Text(
+                if (consentimentoRemoto) "O outro aparelho autorizou."
+                else "Aguardando autorização do outro aparelho.",
+                color = if (consentimento && consentimentoRemoto) Azul else TextoSecundario,
+                fontSize = 11.sp
+            )
+            Button(
+                modifier = Modifier.fillMaxWidth(),
+                enabled = consentimento && consentimentoRemoto &&
+                    estadoConexao == com.tecladop2pv2.webrtc.WebRtcConnectionState.CONNECTED,
+                onClick = {
+                    val batches = HistorySyncStore.prepareBatches(context)
+                    if (batches.isEmpty()) {
+                        resultado = "Nenhuma mensagem elegível para sincronizar."
+                    } else {
+                        var enviados = 0
+                        for (batch in batches) {
+                            if (!coordinator.sendHistoryBatch(batch)) break
+                            enviados++
+                        }
+                        resultado = if (enviados == batches.size) {
+                            "Enviados até \${batches.sumOf { JSONArray(it).length() }} registros. O outro aparelho deve confirmar o recebimento."
+                        } else {
+                            "Envio interrompido após \${enviados * 10} registros; verifique a conexão."
+                        }
+                    }
+                }
+            ) {
+                Text("Enviar mensagens locais")
+            }
+            Text(resultado, color = TextoSecundario, fontSize = 11.sp)
+            Text(
+                "Limite: até 50 mensagens por envio. Confira o conteúdo local antes de compartilhar.",
+                color = TextoSecundario,
+                fontSize = 10.sp
+            )
+        }
+    }
+}
+
 private fun TelaPareamento(voltar: () -> Unit, abrirLeitor: () -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -673,6 +768,8 @@ private fun TelaPareamento(voltar: () -> Unit, abrirLeitor: () -> Unit) {
                 TextButton(onClick = { coordinator.testDataChannel() }) {
                     Text("Testar canal de dados", color = Azul)
                 }
+                Spacer(modifier = Modifier.height(8.dp))
+                PainelSincronizacaoHistorico(context, coordinator)
             } else {
                 Box(
                     modifier = Modifier.size(240.dp).background(Color.White, RoundedCornerShape(12.dp)),
@@ -904,6 +1001,14 @@ private fun TelaLerQrCode(voltar: () -> Unit) {
                 Text(if (processando) "Procurando..." else "Conectar")
             }
 
+            sessaoEncontrada?.let {
+                Spacer(modifier = Modifier.height(12.dp))
+                Text(p2pStatus, color = TextoSecundario, fontSize = 12.sp, textAlign = TextAlign.Center)
+                TextButton(onClick = { coordinator.testDataChannel() }) {
+                    Text("Testar canal de dados", color = Azul)
+                }
+                PainelSincronizacaoHistorico(context, coordinator)
+            }
             Spacer(modifier = Modifier.height(8.dp))
             TextButton(onClick = voltar) { Text("Voltar", color = Azul) }
         }
