@@ -256,7 +256,7 @@ class WebRtcPairingCoordinator(
                     return
                 }
                 onHistoryBatchReceived?.invoke(records.toString())
-                _status.value = "Recebidos \${records.length()} registros de histórico."
+                _status.value = "Recebidos ${records.length()} registros de histórico."
             }
         }
     }
