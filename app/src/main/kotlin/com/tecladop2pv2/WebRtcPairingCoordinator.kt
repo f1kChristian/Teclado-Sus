@@ -49,7 +49,7 @@ class WebRtcPairingCoordinator(
     val connectionState: StateFlow<WebRtcConnectionState> = _connectionState.asStateFlow()
     private val _remoteHistoryConsent = MutableStateFlow(false)
     val remoteHistoryConsent: StateFlow<Boolean> = _remoteHistoryConsent.asStateFlow()
-    private var localHistoryConsent = false
+    @Volatile private var localHistoryConsent = false
     @Volatile var onHistoryBatchReceived: ((String) -> Unit)? = null
 
     fun start(pairingSession: PairingSession, isOfferer: Boolean) {
