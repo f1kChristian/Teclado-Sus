@@ -312,9 +312,9 @@ private fun TelaHistorico(voltar: () -> Unit) {
         mutableStateOf(preferencias.getBoolean("modo_bruto", false))
     }
 
-    val filtrados = registros.filter { registro ->
-        registro.origem != "dispositivo pareado" &&
-            (filtro.isBlank() ||
+    val registrosLocais = registros.filter { it.origem != "dispositivo pareado" }
+    val filtrados = registrosLocais.filter { registro ->
+        (filtro.isBlank() ||
             registro.texto.contains(filtro, ignoreCase = true) ||
             registro.aplicativo.contains(filtro, ignoreCase = true)) &&
             (!somenteMensagens || registro.tipo == "mensagem")
@@ -327,8 +327,18 @@ private fun TelaHistorico(voltar: () -> Unit) {
             text = { Text("Esta ação apagará todos os registros guardados neste celular.") },
             confirmButton = {
                 TextButton(onClick = {
-                    preferencias.edit().putString("registros", "[]").apply()
-                    registros = emptyList()
+                    val existentes = runCatching {
+                        JSONArray(preferencias.getString("registros", "[]"))
+                    }.getOrElse { JSONArray() }
+                    val recebidos = JSONArray()
+                    for (index in 0 until existentes.length()) {
+                        val item = existentes.optJSONObject(index) ?: continue
+                        if (item.optString("origem", "local") == "dispositivo pareado") {
+                            recebidos.put(item)
+                        }
+                    }
+                    preferencias.edit().putString("registros", recebidos.toString()).apply()
+                    registros = carregarHistorico(context)
                     mostrarConfirmacao = false
                 }) {
                     Text("Apagar", color = Color(0xFFFF8A80))
@@ -481,7 +491,7 @@ private fun TelaHistorico(voltar: () -> Unit) {
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
-                            if (registros.isEmpty())
+                            if (registrosLocais.isEmpty())
                                 "Nenhum registro local ainda.\nAtive o histórico para começar."
                             else
                                 "Nenhum registro corresponde à busca.",
