@@ -13,7 +13,7 @@ internal object HistorySyncStore {
     private const val PREFERENCES = "teclado_p2p_historico"
     private const val RECORDS_KEY = "registros"
     private const val MAX_RECORD_TEXT_CHARS = 3_500
-    private const val MAX_RECORDS_PER_BATCH = 10
+    private const val MAX_RECORDS_PER_BATCH = 3
     private const val MAX_RECORDS_PER_SEND = 50
     private const val MAX_STORED_RECORDS = 500
 
