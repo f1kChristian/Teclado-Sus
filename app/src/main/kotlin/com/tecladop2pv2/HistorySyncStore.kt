@@ -37,7 +37,7 @@ internal object HistorySyncStore {
             val app = record.optString("aplicativo", "Aplicativo desconhecido")
             val normalizedApp = app.lowercase()
             if (text.isBlank() || text.length > MAX_RECORD_TEXT_CHARS) continue
-            if (excludedPackageHints.any(normalizedApp::contains)) continue
+            if (excludedPackageHints.any { hint -> normalizedApp.contains(hint) }) continue
 
             var id = record.optString("syncId")
             if (runCatching { UUID.fromString(id) }.isFailure) {
@@ -86,7 +86,7 @@ internal object HistorySyncStore {
             if (id in knownIds || item.optString("tipo") != "mensagem") continue
             if (text.isBlank() || text.length > MAX_RECORD_TEXT_CHARS) continue
             if (app.length > 256) continue
-            if (excludedPackageHints.any(app.lowercase()::contains)) continue
+            if (excludedPackageHints.any { hint -> app.lowercase().contains(hint) }) continue
 
             stored.put(
                 JSONObject()
