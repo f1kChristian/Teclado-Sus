@@ -31,6 +31,7 @@ internal object HistorySyncStore {
         for (index in 0 until records.length()) {
             val record = records.optJSONObject(index) ?: continue
             if (record.optString("tipo", "mensagem") != "mensagem") continue
+            if (record.optString("origem", "local") == "dispositivo pareado") continue
 
             val text = record.optString("texto").trim()
             val app = record.optString("aplicativo", "Aplicativo desconhecido")
