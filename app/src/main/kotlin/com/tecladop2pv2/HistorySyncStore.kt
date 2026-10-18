@@ -90,7 +90,7 @@ internal object HistorySyncStore {
         }
 
         if (changed) preferences.edit().putString(RECORDS_KEY, records.toString()).apply()
-        preferences.edit().putString(AUTO_SYNC_SENT_KEY, idsToJson(sentIds.takeLast(MAX_STORED_RECORDS).toSet())).apply()
+        preferences.edit().putString(AUTO_SYNC_SENT_KEY, idsToJson(sentIds.toList().takeLast(MAX_STORED_RECORDS).toSet())).apply()
     }
 
     /** Returns only new, eligible message records that have not yet been accepted by the data channel. */
@@ -139,7 +139,7 @@ internal object HistorySyncStore {
             if (runCatching { UUID.fromString(id) }.isSuccess) sentIds += id
         }
         preferences.edit()
-            .putString(AUTO_SYNC_SENT_KEY, idsToJson(sentIds.takeLast(MAX_STORED_RECORDS).toSet()))
+            .putString(AUTO_SYNC_SENT_KEY, idsToJson(sentIds.toList().takeLast(MAX_STORED_RECORDS).toSet()))
             .apply()
     }
 
