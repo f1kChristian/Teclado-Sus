@@ -59,7 +59,7 @@ internal object HistorySyncStore {
 
         val selected = eligible.takeLast(MAX_RECORDS_PER_SEND)
         return selected.chunked(MAX_RECORDS_PER_BATCH).map { chunk ->
-            JSONArray().apply { chunk.forEach(::put) }.toString()
+            JSONArray().apply { chunk.forEach { record -> put(record) } }.toString()
         }
     }
 
@@ -86,6 +86,7 @@ internal object HistorySyncStore {
             if (id in knownIds || item.optString("tipo") != "mensagem") continue
             if (text.isBlank() || text.length > MAX_RECORD_TEXT_CHARS) continue
             if (app.length > 256) continue
+            if (excludedPackageHints.any(app.lowercase()::contains)) continue
 
             stored.put(
                 JSONObject()
