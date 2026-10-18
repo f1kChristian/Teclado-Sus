@@ -149,6 +149,7 @@ class WebRtcPairingCoordinator(
             val waitMs = (2_000L * (1L shl retryAttempt.coerceAtMost(4))).coerceAtMost(30_000L)
             delay(waitMs)
             if (closed.get()) return@launch
+            retryJob = null
             if (_connectionState.value == WebRtcConnectionState.CONNECTED) {
                 retryAttempt = 0
                 return@launch
@@ -189,7 +190,7 @@ class WebRtcPairingCoordinator(
                 val sdp = json.optString("sdp").takeIf { it.isNotBlank() } ?: return
                 val incomingAttempt = json.optString("attemptId").takeIf { it.isNotBlank() } ?: return
                 if (incomingAttempt != currentAttemptId) {
-                    val hadAttempt = currentAttemptId != null
+                    val hadAttempt = currentAttemptId != null && remoteDescriptionSet
                     currentAttemptId = incomingAttempt
                     remoteDescriptionSet = false
                     synchronized(pendingCandidates) { pendingCandidates.clear() }
