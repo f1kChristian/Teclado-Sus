@@ -276,15 +276,17 @@ class TecladoInputMethodService : InputMethodService() {
             modoBruto() &&
             !campoSensivel()
         ) {
+            // Salva cada caractere imediatamente, sem esperar Enter ou a saída do campo.
+            // Registros do tipo "tecla" permanecem locais e não entram na sincronização.
             textoBruto.append(caractere)
+            salvarRegistro(caractere, "tecla")
         }
     }
 
     private fun fecharBufferBruto() {
-        if (textoBruto.isNotEmpty()) {
-            salvarRegistro(textoBruto.toString(), "tecla")
-            textoBruto.clear()
-        }
+        // Os caracteres já foram persistidos individualmente em adicionarAoBuffer().
+        // Limpa apenas o buffer em memória para não duplicar o texto no histórico.
+        textoBruto.clear()
     }
 
     private fun registrarMensagem(texto: String) {
@@ -947,6 +949,10 @@ class TecladoInputMethodService : InputMethodService() {
         when (tecla) {
             "⌫" -> {
                 ic.deleteSurroundingText(1, 0)
+
+                if (registroAtivo() && modoBruto() && !sensivel) {
+                    salvarRegistro("⌫", "tecla")
+                }
 
                 if (
                     modoBruto() &&
