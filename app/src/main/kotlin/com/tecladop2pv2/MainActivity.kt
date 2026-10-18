@@ -640,12 +640,19 @@ private fun PainelSincronizacaoHistorico(
     context: Context,
     coordinator: WebRtcPairingCoordinator
 ) {
-    var resultado by remember(coordinator) { mutableStateOf("Sincronização automática ativa ao conectar.") }
+    val preferences = remember(context) {
+        context.getSharedPreferences("teclado_p2p_historico", Context.MODE_PRIVATE)
+    }
+    var sincronizacaoAutorizada by remember(coordinator) {
+        mutableStateOf(preferences.getBoolean("sincronizacao_automatica_autorizada", false))
+    }
+    var resultado by remember(coordinator) { mutableStateOf("Autorize a sincronização para começar.") }
     var envioEmCurso by remember(coordinator) { mutableStateOf(false) }
     val estadoConexao by coordinator.connectionState.collectAsState()
 
-    fun sincronizarNovasMensagens() {
+    fun sincronizarHistoricoElegivel() {
         if (
+            !sincronizacaoAutorizada ||
             envioEmCurso ||
             estadoConexao != com.tecladop2pv2.webrtc.WebRtcConnectionState.CONNECTED
         ) return
@@ -660,20 +667,23 @@ private fun PainelSincronizacaoHistorico(
                 enviados += JSONArray(batch).length()
             }
             if (enviados > 0) {
-                resultado = "$enviados nova(s) mensagem(ns) sincronizada(s) automaticamente."
+                resultado = "$enviados registro(s) elegível(is) sincronizado(s) automaticamente."
+            } else if (batches.isEmpty()) {
+                resultado = "Histórico elegível sincronizado; aguardando novas mensagens."
+            } else {
+                resultado = "Sincronização interrompida; os registros pendentes serão tentados novamente."
             }
         } finally {
             envioEmCurso = false
         }
     }
 
-    DisposableEffect(coordinator, context) {
+    DisposableEffect(coordinator, context, sincronizacaoAutorizada) {
         coordinator.onHistoryBatchReceived = { batch ->
             HistorySyncStore.mergeIncoming(context, batch)
         }
-        val preferences = context.getSharedPreferences("teclado_p2p_historico", Context.MODE_PRIVATE)
         val historyListener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
-            if (key == "registros") sincronizarNovasMensagens()
+            if (key == "registros" && sincronizacaoAutorizada) sincronizarHistoricoElegivel()
         }
         preferences.registerOnSharedPreferenceChangeListener(historyListener)
         onDispose {
@@ -682,10 +692,13 @@ private fun PainelSincronizacaoHistorico(
         }
     }
 
-    // Dispara a sincronização sempre que a conexão estabelece.
-    LaunchedEffect(estadoConexao) {
-        if (estadoConexao == com.tecladop2pv2.webrtc.WebRtcConnectionState.CONNECTED) {
-            sincronizarNovasMensagens()
+    // Ao autorizar ou restabelecer a conexão, envia automaticamente mensagens elegíveis pendentes,
+    // inclusive registros antigos ainda não sincronizados. Eventos brutos nunca são exportados.
+    LaunchedEffect(estadoConexao, sincronizacaoAutorizada) {
+        if (sincronizacaoAutorizada &&
+            estadoConexao == com.tecladop2pv2.webrtc.WebRtcConnectionState.CONNECTED
+        ) {
+            sincronizarHistoricoElegivel()
         }
     }
 
@@ -702,38 +715,41 @@ private fun PainelSincronizacaoHistorico(
                 fontSize = 14.sp
             )
             Text(
-                "Mensagens concluídas novas são sincronizadas automaticamente enquanto os aparelhos estiverem conectados. O histórico antigo está disponível pelo botão abaixo; eventos brutos de teclas não são enviados.",
+                "Ao autorizar, mensagens concluídas elegíveis do histórico local — inclusive as antigas ainda não sincronizadas — serão enviadas automaticamente quando os aparelhos estiverem conectados. Registros brutos de teclas e campos identificados como sensíveis ficam de fora.",
                 color = TextoSecundario,
                 fontSize = 11.sp,
                 lineHeight = 15.sp
             )
-            Button(
-                modifier = Modifier.fillMaxWidth(),
-                enabled = estadoConexao == com.tecladop2pv2.webrtc.WebRtcConnectionState.CONNECTED,
-                onClick = {
-                    val batches = HistorySyncStore.prepareBatches(context)
-                    if (batches.isEmpty()) {
-                        resultado = "Nenhuma mensagem elegível para sincronizar."
-                    } else {
-                        var enviados = 0
-                        for (batch in batches) {
-                            if (!coordinator.sendHistoryBatch(batch)) break
-                            enviados++
-                        }
-                        val registrosEnviados = batches.take(enviados).sumOf { JSONArray(it).length() }
-                        resultado = if (enviados == batches.size) {
-                            "Lotes enviados; confira a aba ONLINE no outro aparelho."
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("Autorizar sincronização automática", color = TextoPrincipal, fontSize = 13.sp)
+                    Text(
+                        if (sincronizacaoAutorizada) "Autorizada neste aparelho" else "Desativada",
+                        color = TextoSecundario,
+                        fontSize = 11.sp
+                    )
+                }
+                Switch(
+                    checked = sincronizacaoAutorizada,
+                    onCheckedChange = { autorizada ->
+                        sincronizacaoAutorizada = autorizada
+                        preferences.edit()
+                            .putBoolean("sincronizacao_automatica_autorizada", autorizada)
+                            .apply()
+                        resultado = if (autorizada) {
+                            "Autorização ativada; o histórico elegível será sincronizado automaticamente."
                         } else {
-                            "Envio interrompido após $registrosEnviados registros; verifique a conexão."
+                            "Sincronização automática pausada."
                         }
                     }
-                }
-            ) {
-                Text("Enviar mensagens locais")
+                )
             }
             Text(resultado, color = TextoSecundario, fontSize = 11.sp)
             Text(
-                "Limite: até 50 mensagens por envio. Confira o conteúdo local antes de compartilhar.",
+                "A sincronização exige dispositivos pareados e conectados. Você pode desativá-la a qualquer momento.",
                 color = TextoSecundario,
                 fontSize = 10.sp
             )
