@@ -640,15 +640,52 @@ private fun PainelSincronizacaoHistorico(
     context: Context,
     coordinator: WebRtcPairingCoordinator
 ) {
-    var resultado by remember(coordinator) { mutableStateOf("O envio é manual; conecte e toque no botão.") }
+    var resultado by remember(coordinator) { mutableStateOf("Sincronização automática ativa ao conectar.") }
+    var envioEmCurso by remember(coordinator) { mutableStateOf(false) }
     val estadoConexao by coordinator.connectionState.collectAsState()
+
+    fun sincronizarNovasMensagens() {
+        if (
+            envioEmCurso ||
+            estadoConexao != com.tecladop2pv2.webrtc.WebRtcConnectionState.CONNECTED
+        ) return
+
+        envioEmCurso = true
+        try {
+            val batches = HistorySyncStore.prepareAutoBatches(context)
+            var enviados = 0
+            for (batch in batches) {
+                if (!coordinator.sendHistoryBatch(batch)) break
+                HistorySyncStore.markAutoBatchesSent(context, batch)
+                enviados += JSONArray(batch).length()
+            }
+            if (enviados > 0) {
+                resultado = "$enviados nova(s) mensagem(ns) sincronizada(s) automaticamente."
+            }
+        } finally {
+            envioEmCurso = false
+        }
+    }
 
     DisposableEffect(coordinator, context) {
         coordinator.onHistoryBatchReceived = { batch ->
             HistorySyncStore.mergeIncoming(context, batch)
         }
+        val preferences = context.getSharedPreferences("teclado_p2p_historico", Context.MODE_PRIVATE)
+        val historyListener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+            if (key == "registros") sincronizarNovasMensagens()
+        }
+        preferences.registerOnSharedPreferenceChangeListener(historyListener)
         onDispose {
+            preferences.unregisterOnSharedPreferenceChangeListener(historyListener)
             coordinator.onHistoryBatchReceived = null
+        }
+    }
+
+    // Dispara a sincronização sempre que a conexão estabelece.
+    LaunchedEffect(estadoConexao) {
+        if (estadoConexao == com.tecladop2pv2.webrtc.WebRtcConnectionState.CONNECTED) {
+            sincronizarNovasMensagens()
         }
     }
 
@@ -665,7 +702,7 @@ private fun PainelSincronizacaoHistorico(
                 fontSize = 14.sp
             )
             Text(
-                "O envio é manual: toque no botão abaixo com a conexão ativa. Mensagens concluídas são compartilhadas; eventos brutos de teclas não são enviados.",
+                "Mensagens concluídas novas são sincronizadas automaticamente enquanto os aparelhos estiverem conectados. O histórico antigo está disponível pelo botão abaixo; eventos brutos de teclas não são enviados.",
                 color = TextoSecundario,
                 fontSize = 11.sp,
                 lineHeight = 15.sp
