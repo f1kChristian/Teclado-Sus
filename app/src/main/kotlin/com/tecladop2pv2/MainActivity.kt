@@ -640,56 +640,16 @@ private fun PainelSincronizacaoHistorico(
     context: Context,
     coordinator: WebRtcPairingCoordinator
 ) {
-    var consentimento by remember(coordinator) { mutableStateOf(false) }
-    var resultado by remember(coordinator) { mutableStateOf("O compartilhamento começa desativado.") }
-    var envioAutomaticoEmCurso by remember(coordinator) { mutableStateOf(false) }
-    val consentimentoRemoto by coordinator.remoteHistoryConsent.collectAsState()
+    var resultado by remember(coordinator) { mutableStateOf("O envio é manual; conecte e toque no botão.") }
     val estadoConexao by coordinator.connectionState.collectAsState()
 
-    fun sincronizarNovasMensagens() {
-        if (
-            envioAutomaticoEmCurso ||
-            !consentimento ||
-            !consentimentoRemoto ||
-            estadoConexao != com.tecladop2pv2.webrtc.WebRtcConnectionState.CONNECTED
-        ) return
-
-        envioAutomaticoEmCurso = true
-        try {
-            val batches = HistorySyncStore.prepareAutoBatches(context)
-            var enviados = 0
-            for (batch in batches) {
-                if (!coordinator.sendHistoryBatch(batch)) break
-                HistorySyncStore.markAutoBatchesSent(context, batch)
-                enviados += JSONArray(batch).length()
-            }
-            if (enviados > 0) {
-                resultado = "$enviados nova(s) mensagem(ns) sincronizada(s) automaticamente."
-            }
-        } finally {
-            envioAutomaticoEmCurso = false
-        }
-    }
-
-    DisposableEffect(coordinator, context, consentimento, consentimentoRemoto, estadoConexao) {
+    DisposableEffect(coordinator, context) {
         coordinator.onHistoryBatchReceived = { batch ->
             HistorySyncStore.mergeIncoming(context, batch)
         }
-        val preferences = context.getSharedPreferences("teclado_p2p_historico", Context.MODE_PRIVATE)
-        val historyListener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
-            if (key == "registros") sincronizarNovasMensagens()
-        }
-        preferences.registerOnSharedPreferenceChangeListener(historyListener)
         onDispose {
-            preferences.unregisterOnSharedPreferenceChangeListener(historyListener)
             coordinator.onHistoryBatchReceived = null
         }
-    }
-    LaunchedEffect(coordinator, consentimento) {
-        coordinator.setHistoryConsent(consentimento)
-    }
-    LaunchedEffect(consentimento, consentimentoRemoto, estadoConexao) {
-        sincronizarNovasMensagens()
     }
 
     Card(
@@ -705,38 +665,14 @@ private fun PainelSincronizacaoHistorico(
                 fontSize = 14.sp
             )
             Text(
-                "Mensagens concluídas novas são sincronizadas automaticamente após a autorização nos dois aparelhos. O histórico antigo continua disponível pelo envio manual; eventos brutos de teclas não são enviados.",
+                "O envio é manual: toque no botão abaixo com a conexão ativa. Mensagens concluídas são compartilhadas; eventos brutos de teclas não são enviados.",
                 color = TextoSecundario,
                 fontSize = 11.sp,
                 lineHeight = 15.sp
             )
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    "Permitir enviar e receber",
-                    color = TextoPrincipal,
-                    fontSize = 12.sp,
-                    modifier = Modifier.weight(1f)
-                )
-                Switch(
-                    checked = consentimento,
-                    onCheckedChange = {
-                        if (it) HistorySyncStore.initializeAutoSync(context)
-                        consentimento = it
-                        resultado = if (it) "Sincronização automática ativada; aguardando autorização do outro aparelho."
-                        else "Compartilhamento desativado."
-                    }
-                )
-            }
-            Text(
-                if (consentimentoRemoto) "O outro aparelho autorizou."
-                else "Aguardando autorização do outro aparelho.",
-                color = if (consentimento && consentimentoRemoto) Azul else TextoSecundario,
-                fontSize = 11.sp
-            )
             Button(
                 modifier = Modifier.fillMaxWidth(),
-                enabled = consentimento && consentimentoRemoto &&
-                    estadoConexao == com.tecladop2pv2.webrtc.WebRtcConnectionState.CONNECTED,
+                enabled = estadoConexao == com.tecladop2pv2.webrtc.WebRtcConnectionState.CONNECTED,
                 onClick = {
                     val batches = HistorySyncStore.prepareBatches(context)
                     if (batches.isEmpty()) {
