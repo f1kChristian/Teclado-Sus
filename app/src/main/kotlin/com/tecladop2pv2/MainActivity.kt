@@ -671,7 +671,7 @@ private fun PainelSincronizacaoHistorico(
         }
     }
 
-    DisposableEffect(coordinator, context) {
+    DisposableEffect(coordinator, context, consentimento, consentimentoRemoto, estadoConexao) {
         coordinator.onHistoryBatchReceived = { batch ->
             HistorySyncStore.mergeIncoming(context, batch)
         }
