@@ -26,7 +26,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * Coordinates Firebase signaling and a WebRTC data channel for an explicitly initiated pairing.
- * History transfer is manual and requires consent on both paired devices.
+ * History transfer is manual.
  */
 class WebRtcPairingCoordinator(
     context: Context,
@@ -47,9 +47,6 @@ class WebRtcPairingCoordinator(
     val status: StateFlow<String> = _status.asStateFlow()
     private val _connectionState = MutableStateFlow(WebRtcConnectionState.IDLE)
     val connectionState: StateFlow<WebRtcConnectionState> = _connectionState.asStateFlow()
-    private val _remoteHistoryConsent = MutableStateFlow(false)
-    val remoteHistoryConsent: StateFlow<Boolean> = _remoteHistoryConsent.asStateFlow()
-    @Volatile private var localHistoryConsent = false
     @Volatile var onHistoryBatchReceived: ((String) -> Unit)? = null
 
     fun start(pairingSession: PairingSession, isOfferer: Boolean) {
@@ -171,39 +168,26 @@ class WebRtcPairingCoordinator(
     }
 
 
-    /**
-     * History sharing is disabled by default and must be enabled separately on both devices.
-     * Consent is re-announced when the data channel opens after a reconnect.
-     */
-    fun setHistoryConsent(enabled: Boolean) {
-        localHistoryConsent = enabled
-        if (!enabled) _status.value = "Compartilhamento de histórico desativado neste aparelho."
-        publishHistoryConsent()
-    }
 
-    private fun publishHistoryConsent() {
-        if (_connectionState.value != WebRtcConnectionState.CONNECTED) return
-        val sent = manager.sendMessage(
-            JSONObject()
-                .put("type", "history_consent")
-                .put("enabled", localHistoryConsent)
-                .toString()
-        )
-        if (sent && localHistoryConsent) {
-            _status.value = if (_remoteHistoryConsent.value) {
-                "Os dois aparelhos autorizaram o compartilhamento do histórico."
-            } else {
-                "Autorização local ativa; aguardando autorização do outro aparelho."
-            }
-        }
+  /** Sends one bounded batch of message records over the data channel. */
+fun sendHistoryBatch(recordsJson: String): Boolean {
+    val records = runCatching { JSONArray(recordsJson) }.getOrElse {
+        _status.value = "Lote de histórico inválido."
+        return false
     }
-
-    /** Sends one bounded batch of message records after explicit consent from both devices. */
-    fun sendHistoryBatch(recordsJson: String): Boolean {
-        if (!localHistoryConsent || !_remoteHistoryConsent.value) {
-            _status.value = "Ative o compartilhamento nos dois aparelhos antes de enviar."
-            return false
-        }
+    if (records.length() == 0) return true
+    val message = JSONObject()
+        .put("type", "history_batch")
+        .put("records", records)
+        .toString()
+    if (message.toByteArray(Charsets.UTF_8).size > MAX_HISTORY_BATCH_BYTES) {
+        _status.value = "Lote muito grande; reduza a quantidade de registros."
+        return false
+    }
+    val sent = manager.sendMessage(message)
+    _status.value = if (sent) "Lote de histórico enviado." else "Canal de dados ainda não está aberto."
+    return sent
+}
         val records = runCatching { JSONArray(recordsJson) }.getOrElse {
             _status.value = "Lote de histórico inválido."
             return false
@@ -222,47 +206,32 @@ class WebRtcPairingCoordinator(
         return sent
     }
 
-    private fun handleDataMessage(message: String) {
-        if (message == "p2p:ping") {
-            manager.sendMessage("p2p:pong")
-            publishHistoryConsent()
-            return
-        }
-        if (message == "p2p:pong") {
-            _status.value = "Canal de dados WebRTC validado."
-            publishHistoryConsent()
-            return
-        }
-        if (message.toByteArray(Charsets.UTF_8).size > MAX_HISTORY_BATCH_BYTES) {
-            _status.value = "Mensagem recebida excede o limite permitido."
-            return
-        }
-        val json = runCatching { JSONObject(message) }.getOrElse { return }
-        when (json.optString("type")) {
-            "history_consent" -> {
-                _remoteHistoryConsent.value = json.optBoolean("enabled", false)
-                _status.value = when {
-                    !_remoteHistoryConsent.value -> "O outro aparelho não autorizou o compartilhamento."
-                    localHistoryConsent -> "Os dois aparelhos autorizaram o compartilhamento do histórico."
-                    else -> "O outro aparelho autorizou; ative a opção neste aparelho também."
-                }
+   private fun handleDataMessage(message: String) {
+    if (message == "p2p:ping") {
+        manager.sendMessage("p2p:pong")
+        return
+    }
+    if (message == "p2p:pong") {
+        _status.value = "Canal de dados WebRTC validado."
+        return
+    }
+    if (message.toByteArray(Charsets.UTF_8).size > MAX_HISTORY_BATCH_BYTES) {
+        _status.value = "Mensagem recebida excede o limite permitido."
+        return
+    }
+    val json = runCatching { JSONObject(message) }.getOrElse { return }
+    when (json.optString("type")) {
+        "history_batch" -> {
+            val records = json.optJSONArray("records") ?: return
+            if (records.length() > MAX_RECORDS_PER_BATCH) {
+                _status.value = "Lote rejeitado: quantidade de registros acima do limite."
+                return
             }
-            "history_batch" -> {
-                if (!localHistoryConsent || !_remoteHistoryConsent.value) {
-                    _status.value = "Lote ignorado: o compartilhamento não está autorizado nos dois aparelhos."
-                    return
-                }
-                val records = json.optJSONArray("records") ?: return
-                if (records.length() > MAX_RECORDS_PER_BATCH) {
-                    _status.value = "Lote rejeitado: quantidade de registros acima do limite."
-                    return
-                }
-                onHistoryBatchReceived?.invoke(records.toString())
-                _status.value = "Recebidos ${records.length()} registros de histórico."
-            }
+            onHistoryBatchReceived?.invoke(records.toString())
+            _status.value = "Recebidos ${records.length()} registros de histórico."
         }
     }
-
+}
     /** Sends a harmless connectivity probe. */
     
     fun testDataChannel(): Boolean {
