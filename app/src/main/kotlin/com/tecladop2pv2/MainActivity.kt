@@ -22,6 +22,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
@@ -93,7 +95,8 @@ private data class RegistroHistorico(
     val texto: String,
     val tipo: String,
     val aplicativo: String,
-    val data: String
+    val data: String,
+    val origem: String = "local"
 )
 
 private fun carregarHistorico(context: Context): List<RegistroHistorico> {
@@ -110,7 +113,8 @@ private fun carregarHistorico(context: Context): List<RegistroHistorico> {
                 texto = item.optString("texto"),
                 tipo = item.optString("tipo", "mensagem"),
                 aplicativo = item.optString("aplicativo", "Aplicativo desconhecido"),
-                data = item.optString("data")
+                data = item.optString("data"),
+                origem = item.optString("origem", "local")
             )
         }.reversed()
     } catch (_: Exception) {
@@ -308,7 +312,8 @@ private fun TelaHistorico(voltar: () -> Unit) {
         mutableStateOf(preferencias.getBoolean("modo_bruto", false))
     }
 
-    val filtrados = registros.filter { registro ->
+    val registrosLocais = registros.filter { it.origem != "dispositivo pareado" }
+    val filtrados = registrosLocais.filter { registro ->
         (filtro.isBlank() ||
             registro.texto.contains(filtro, ignoreCase = true) ||
             registro.aplicativo.contains(filtro, ignoreCase = true)) &&
@@ -322,8 +327,18 @@ private fun TelaHistorico(voltar: () -> Unit) {
             text = { Text("Esta ação apagará todos os registros guardados neste celular.") },
             confirmButton = {
                 TextButton(onClick = {
-                    preferencias.edit().putString("registros", "[]").apply()
-                    registros = emptyList()
+                    val existentes = runCatching {
+                        JSONArray(preferencias.getString("registros", "[]"))
+                    }.getOrElse { JSONArray() }
+                    val recebidos = JSONArray()
+                    for (index in 0 until existentes.length()) {
+                        val item = existentes.optJSONObject(index) ?: continue
+                        if (item.optString("origem", "local") == "dispositivo pareado") {
+                            recebidos.put(item)
+                        }
+                    }
+                    preferencias.edit().putString("registros", recebidos.toString()).apply()
+                    registros = carregarHistorico(context)
                     mostrarConfirmacao = false
                 }) {
                     Text("Apagar", color = Color(0xFFFF8A80))
@@ -476,7 +491,7 @@ private fun TelaHistorico(voltar: () -> Unit) {
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
-                            if (registros.isEmpty())
+                            if (registrosLocais.isEmpty())
                                 "Nenhum registro local ainda.\nAtive o histórico para começar."
                             else
                                 "Nenhum registro corresponde à busca.",
@@ -497,36 +512,43 @@ private fun TelaHistorico(voltar: () -> Unit) {
                 }
             }
         } else {
+            val registrosOnline = registros.filter { it.origem == "dispositivo pareado" }
             Column(
-                modifier = Modifier.fillMaxSize().padding(24.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Center
+                modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 12.dp)
             ) {
-                Text("⇄", fontSize = 54.sp, color = Azul)
-                Spacer(modifier = Modifier.height(16.dp))
                 Text(
-                    "Histórico online indisponível",
-                    fontSize = 20.sp,
+                    "Histórico recebido do dispositivo pareado",
+                    fontSize = 18.sp,
                     fontWeight = FontWeight.Bold,
-                    color = TextoPrincipal,
-                    textAlign = TextAlign.Center
+                    color = TextoPrincipal
                 )
-                Spacer(modifier = Modifier.height(10.dp))
+                Spacer(modifier = Modifier.height(6.dp))
                 Text(
-                    "Você precisa se conectar a um dispositivo para ter acesso ao histórico online. A sincronização entre celulares ainda não está ativa.",
+                    "Os registros recebidos ficam armazenados localmente neste aparelho. O envio é sempre manual e exige autorização nos dois dispositivos.",
                     color = TextoSecundario,
-                    fontSize = 14.sp,
-                    textAlign = TextAlign.Center,
-                    lineHeight = 22.sp
+                    fontSize = 12.sp,
+                    lineHeight = 17.sp
                 )
-                Spacer(modifier = Modifier.height(18.dp))
-                Button(
-                    onClick = {
-                        // A conexão deve ser iniciada pela tela principal.
-                        voltar()
+                Spacer(modifier = Modifier.height(12.dp))
+                if (registrosOnline.isEmpty()) {
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            "Nenhuma mensagem recebida ainda.\nPareie os aparelhos, autorize o compartilhamento nos dois e envie as mensagens.",
+                            color = TextoSecundario,
+                            textAlign = TextAlign.Center
+                        )
                     }
-                ) {
-                    Text("Voltar e conectar dispositivo")
+                } else {
+                    LazyColumn(
+                        modifier = Modifier.fillMaxSize(),
+                        contentPadding = PaddingValues(bottom = 24.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        items(registrosOnline) { registro -> CartaoRegistro(registro) }
+                    }
                 }
             }
         }
@@ -614,9 +636,135 @@ private fun CartaoRegistro(registro: RegistroHistorico) {
 }
 
 @Composable
+private fun PainelSincronizacaoHistorico(
+    context: Context,
+    coordinator: WebRtcPairingCoordinator
+) {
+    val preferences = remember(context) {
+        context.getSharedPreferences("teclado_p2p_historico", Context.MODE_PRIVATE)
+    }
+    var sincronizacaoAutorizada by remember(coordinator) {
+        mutableStateOf(preferences.getBoolean("sincronizacao_automatica_autorizada", false))
+    }
+    var resultado by remember(coordinator) { mutableStateOf("Autorize a sincronização para começar.") }
+    var envioEmCurso by remember(coordinator) { mutableStateOf(false) }
+    val estadoConexao by coordinator.connectionState.collectAsState()
+
+    fun sincronizarHistoricoElegivel() {
+        if (
+            !sincronizacaoAutorizada ||
+            envioEmCurso ||
+            estadoConexao != com.tecladop2pv2.webrtc.WebRtcConnectionState.CONNECTED
+        ) return
+
+        envioEmCurso = true
+        try {
+            val batches = HistorySyncStore.prepareAutoBatches(context)
+            var enviados = 0
+            for (batch in batches) {
+                if (!coordinator.sendHistoryBatch(batch)) break
+                HistorySyncStore.markAutoBatchesSent(context, batch)
+                enviados += JSONArray(batch).length()
+            }
+            if (enviados > 0) {
+                resultado = "$enviados registro(s) elegível(is) sincronizado(s) automaticamente."
+            } else if (batches.isEmpty()) {
+                resultado = "Histórico elegível sincronizado; aguardando novas mensagens."
+            } else {
+                resultado = "Sincronização interrompida; os registros pendentes serão tentados novamente."
+            }
+        } finally {
+            envioEmCurso = false
+        }
+    }
+
+    DisposableEffect(coordinator, context, sincronizacaoAutorizada) {
+        coordinator.onHistoryBatchReceived = { batch ->
+            HistorySyncStore.mergeIncoming(context, batch)
+        }
+        val historyListener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+            if (key == "registros" && sincronizacaoAutorizada) sincronizarHistoricoElegivel()
+        }
+        preferences.registerOnSharedPreferenceChangeListener(historyListener)
+        onDispose {
+            preferences.unregisterOnSharedPreferenceChangeListener(historyListener)
+            coordinator.onHistoryBatchReceived = null
+        }
+    }
+
+    // Ao autorizar ou restabelecer a conexão, envia automaticamente mensagens elegíveis pendentes,
+    // inclusive registros antigos ainda não sincronizados. Eventos brutos nunca são exportados.
+    LaunchedEffect(estadoConexao, sincronizacaoAutorizada) {
+        if (sincronizacaoAutorizada &&
+            estadoConexao == com.tecladop2pv2.webrtc.WebRtcConnectionState.CONNECTED
+        ) {
+            sincronizarHistoricoElegivel()
+        }
+    }
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = FundoTopo),
+        shape = RoundedCornerShape(14.dp)
+    ) {
+        Column(modifier = Modifier.fillMaxWidth().padding(12.dp)) {
+            Text(
+                "Sincronização do histórico",
+                color = TextoPrincipal,
+                fontWeight = FontWeight.Bold,
+                fontSize = 14.sp
+            )
+            Text(
+                "Ao autorizar, mensagens concluídas elegíveis do histórico local — inclusive as antigas ainda não sincronizadas — serão enviadas automaticamente quando os aparelhos estiverem conectados. Registros brutos de teclas e campos identificados como sensíveis ficam de fora.",
+                color = TextoSecundario,
+                fontSize = 11.sp,
+                lineHeight = 15.sp
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("Autorizar sincronização automática", color = TextoPrincipal, fontSize = 13.sp)
+                    Text(
+                        if (sincronizacaoAutorizada) "Autorizada neste aparelho" else "Desativada",
+                        color = TextoSecundario,
+                        fontSize = 11.sp
+                    )
+                }
+                Switch(
+                    checked = sincronizacaoAutorizada,
+                    onCheckedChange = { autorizada ->
+                        sincronizacaoAutorizada = autorizada
+                        preferences.edit()
+                            .putBoolean("sincronizacao_automatica_autorizada", autorizada)
+                            .apply()
+                        resultado = if (autorizada) {
+                            "Autorização ativada; o histórico elegível será sincronizado automaticamente."
+                        } else {
+                            "Sincronização automática pausada."
+                        }
+                    }
+                )
+            }
+            Text(resultado, color = TextoSecundario, fontSize = 11.sp)
+            Text(
+                "A sincronização exige dispositivos pareados e conectados. Você pode desativá-la a qualquer momento.",
+                color = TextoSecundario,
+                fontSize = 10.sp
+            )
+        }
+    }
+}
+
+@Composable
 private fun TelaPareamento(voltar: () -> Unit, abrirLeitor: () -> Unit) {
+    val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val cliente = remember { FirebaseSignalingClient() }
+    val coordinator = remember { WebRtcPairingCoordinator(context, cliente) }
+    val p2pStatus by coordinator.status.collectAsState()
+    DisposableEffect(coordinator) { onDispose { coordinator.close() } }
 
     var sessao by remember { mutableStateOf<PairingSession?>(null) }
     var carregando by remember { mutableStateOf(false) }
@@ -634,7 +782,8 @@ private fun TelaPareamento(voltar: () -> Unit, abrirLeitor: () -> Unit) {
         Cabecalho("Pareamento P2P", voltar)
 
         Column(
-            modifier = Modifier.fillMaxSize().padding(horizontal = 24.dp, vertical = 20.dp),
+            modifier = Modifier.fillMaxSize().padding(horizontal = 24.dp, vertical = 20.dp)
+                .verticalScroll(rememberScrollState()),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Text(
@@ -664,6 +813,13 @@ private fun TelaPareamento(voltar: () -> Unit, abrirLeitor: () -> Unit) {
                 sessao?.expiresAtMillis?.let {
                     Text("Expira em ${DateFormat.getTimeInstance().format(Date(it))}", color = TextoSecundario, fontSize = 12.sp)
                 }
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(p2pStatus, color = TextoSecundario, fontSize = 12.sp, textAlign = TextAlign.Center)
+                TextButton(onClick = { coordinator.testDataChannel() }) {
+                    Text("Testar canal de dados", color = Azul)
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+                PainelSincronizacaoHistorico(context, coordinator)
             } else {
                 Box(
                     modifier = Modifier.size(240.dp).background(Color.White, RoundedCornerShape(12.dp)),
@@ -687,7 +843,9 @@ private fun TelaPareamento(voltar: () -> Unit, abrirLeitor: () -> Unit) {
                         erro = null
                         sessao = null
                         try {
-                            sessao = cliente.createSession()
+                            val novaSessao = cliente.createSession()
+                            sessao = novaSessao
+                            coordinator.start(novaSessao, isOfferer = true)
                         } catch (e: Exception) {
                             erro = if (e.message == "FIREBASE_AUTH_REQUIRED")
                                 "Autenticação Firebase necessária."
@@ -716,6 +874,9 @@ private fun TelaLerQrCode(voltar: () -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val cliente = remember { FirebaseSignalingClient() }
+    val coordinator = remember { WebRtcPairingCoordinator(context, cliente) }
+    val p2pStatus by coordinator.status.collectAsState()
+    DisposableEffect(coordinator) { onDispose { coordinator.close() } }
 
     var codigo by remember { mutableStateOf("") }
     var mensagem by remember {
@@ -739,7 +900,8 @@ private fun TelaLerQrCode(voltar: () -> Unit) {
         Cabecalho("Conectar dispositivo", voltar)
 
         Column(
-            modifier = Modifier.fillMaxSize().padding(horizontal = 24.dp, vertical = 16.dp),
+            modifier = Modifier.fillMaxSize().padding(horizontal = 24.dp, vertical = 16.dp)
+                .verticalScroll(rememberScrollState()),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Text("Conectar dispositivo", fontSize = 25.sp, fontWeight = FontWeight.Bold, color = TextoPrincipal)
@@ -853,6 +1015,12 @@ private fun TelaLerQrCode(voltar: () -> Unit) {
             sessaoEncontrada?.let {
                 Spacer(modifier = Modifier.height(8.dp))
                 Text("Sessão localizada: ${it.sessionId}", color = Azul, fontSize = 12.sp, textAlign = TextAlign.Center)
+                Text(p2pStatus, color = TextoSecundario, fontSize = 12.sp, textAlign = TextAlign.Center)
+                TextButton(onClick = { coordinator.testDataChannel() }) {
+                    Text("Testar canal de dados", color = Azul)
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+                PainelSincronizacaoHistorico(context, coordinator)
             }
 
             Spacer(modifier = Modifier.height(12.dp))
@@ -868,7 +1036,8 @@ private fun TelaLerQrCode(voltar: () -> Unit) {
                         try {
                             val sessao = cliente.joinSession(codigo)
                             sessaoEncontrada = sessao
-                            mensagem = "Sessão localizada. A negociação WebRTC ainda precisa ser integrada."
+                            coordinator.start(sessao, isOfferer = false)
+                            mensagem = "Sessão aceita. Iniciando conexão P2P…"
                         } catch (e: Exception) {
                             erro = true
                             mensagem = when (e.message) {
@@ -885,6 +1054,14 @@ private fun TelaLerQrCode(voltar: () -> Unit) {
                 Text(if (processando) "Procurando..." else "Conectar")
             }
 
+            sessaoEncontrada?.let {
+                Spacer(modifier = Modifier.height(12.dp))
+                Text(p2pStatus, color = TextoSecundario, fontSize = 12.sp, textAlign = TextAlign.Center)
+                TextButton(onClick = { coordinator.testDataChannel() }) {
+                    Text("Testar canal de dados", color = Azul)
+                }
+                PainelSincronizacaoHistorico(context, coordinator)
+            }
             Spacer(modifier = Modifier.height(8.dp))
             TextButton(onClick = voltar) { Text("Voltar", color = Azul) }
         }

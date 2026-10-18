@@ -13,7 +13,7 @@ android {
 }
 
 dependencies {
-    implementation(libs.webrtc)
+    api(libs.webrtc)
     implementation(project(":core:model"))
     implementation(libs.coroutines.android)
 }
