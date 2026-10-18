@@ -26,7 +26,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * Coordinates Firebase signaling and a WebRTC data channel for an explicitly initiated pairing.
- * History transfer is manual.
+ * History transfer is automatic.
  */
 class WebRtcPairingCoordinator(
     context: Context,
@@ -93,7 +93,6 @@ class WebRtcPairingCoordinator(
         scope.launch {
             manager.state.collect { state ->
                 _connectionState.value = state
-                if (state == WebRtcConnectionState.CONNECTED) publishHistoryConsent()
             }
         }
     }
@@ -167,27 +166,8 @@ class WebRtcPairingCoordinator(
         }
     }
 
-
-
-  /** Sends one bounded batch of message records over the data channel. */
-fun sendHistoryBatch(recordsJson: String): Boolean {
-    val records = runCatching { JSONArray(recordsJson) }.getOrElse {
-        _status.value = "Lote de histórico inválido."
-        return false
-    }
-    if (records.length() == 0) return true
-    val message = JSONObject()
-        .put("type", "history_batch")
-        .put("records", records)
-        .toString()
-    if (message.toByteArray(Charsets.UTF_8).size > MAX_HISTORY_BATCH_BYTES) {
-        _status.value = "Lote muito grande; reduza a quantidade de registros."
-        return false
-    }
-    val sent = manager.sendMessage(message)
-    _status.value = if (sent) "Lote de histórico enviado." else "Canal de dados ainda não está aberto."
-    return sent
-}
+    /** Sends one bounded batch of message records over the data channel. */
+    fun sendHistoryBatch(recordsJson: String): Boolean {
         val records = runCatching { JSONArray(recordsJson) }.getOrElse {
             _status.value = "Lote de histórico inválido."
             return false
@@ -206,34 +186,34 @@ fun sendHistoryBatch(recordsJson: String): Boolean {
         return sent
     }
 
-   private fun handleDataMessage(message: String) {
-    if (message == "p2p:ping") {
-        manager.sendMessage("p2p:pong")
-        return
-    }
-    if (message == "p2p:pong") {
-        _status.value = "Canal de dados WebRTC validado."
-        return
-    }
-    if (message.toByteArray(Charsets.UTF_8).size > MAX_HISTORY_BATCH_BYTES) {
-        _status.value = "Mensagem recebida excede o limite permitido."
-        return
-    }
-    val json = runCatching { JSONObject(message) }.getOrElse { return }
-    when (json.optString("type")) {
-        "history_batch" -> {
-            val records = json.optJSONArray("records") ?: return
-            if (records.length() > MAX_RECORDS_PER_BATCH) {
-                _status.value = "Lote rejeitado: quantidade de registros acima do limite."
-                return
+    private fun handleDataMessage(message: String) {
+        if (message == "p2p:ping") {
+            manager.sendMessage("p2p:pong")
+            return
+        }
+        if (message == "p2p:pong") {
+            _status.value = "Canal de dados WebRTC validado."
+            return
+        }
+        if (message.toByteArray(Charsets.UTF_8).size > MAX_HISTORY_BATCH_BYTES) {
+            _status.value = "Mensagem recebida excede o limite permitido."
+            return
+        }
+        val json = runCatching { JSONObject(message) }.getOrElse { return }
+        when (json.optString("type")) {
+            "history_batch" -> {
+                val records = json.optJSONArray("records") ?: return
+                if (records.length() > MAX_RECORDS_PER_BATCH) {
+                    _status.value = "Lote rejeitado: quantidade de registros acima do limite."
+                    return
+                }
+                onHistoryBatchReceived?.invoke(records.toString())
+                _status.value = "Recebidos ${records.length()} registros de histórico."
             }
-            onHistoryBatchReceived?.invoke(records.toString())
-            _status.value = "Recebidos ${records.length()} registros de histórico."
         }
     }
-}
+
     /** Sends a harmless connectivity probe. */
-    
     fun testDataChannel(): Boolean {
         val sent = manager.sendMessage("p2p:ping")
         if (sent) _status.value = "Teste de canal enviado; aguardando resposta."
