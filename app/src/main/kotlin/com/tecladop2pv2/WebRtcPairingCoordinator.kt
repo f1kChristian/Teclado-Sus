@@ -225,10 +225,12 @@ class WebRtcPairingCoordinator(
     private fun handleDataMessage(message: String) {
         if (message == "p2p:ping") {
             manager.sendMessage("p2p:pong")
+            publishHistoryConsent()
             return
         }
         if (message == "p2p:pong") {
             _status.value = "Canal de dados WebRTC validado."
+            publishHistoryConsent()
             return
         }
         if (message.toByteArray(Charsets.UTF_8).size > MAX_HISTORY_BATCH_BYTES) {
