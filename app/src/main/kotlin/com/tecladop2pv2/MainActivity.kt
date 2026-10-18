@@ -22,6 +22,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
@@ -93,7 +95,8 @@ private data class RegistroHistorico(
     val texto: String,
     val tipo: String,
     val aplicativo: String,
-    val data: String
+    val data: String,
+    val origem: String = "local"
 )
 
 private fun carregarHistorico(context: Context): List<RegistroHistorico> {
@@ -110,7 +113,8 @@ private fun carregarHistorico(context: Context): List<RegistroHistorico> {
                 texto = item.optString("texto"),
                 tipo = item.optString("tipo", "mensagem"),
                 aplicativo = item.optString("aplicativo", "Aplicativo desconhecido"),
-                data = item.optString("data")
+                data = item.optString("data"),
+                origem = item.optString("origem", "local")
             )
         }.reversed()
     } catch (_: Exception) {
@@ -309,7 +313,8 @@ private fun TelaHistorico(voltar: () -> Unit) {
     }
 
     val filtrados = registros.filter { registro ->
-        (filtro.isBlank() ||
+        registro.origem != "dispositivo pareado" &&
+            (filtro.isBlank() ||
             registro.texto.contains(filtro, ignoreCase = true) ||
             registro.aplicativo.contains(filtro, ignoreCase = true)) &&
             (!somenteMensagens || registro.tipo == "mensagem")
@@ -497,36 +502,43 @@ private fun TelaHistorico(voltar: () -> Unit) {
                 }
             }
         } else {
+            val registrosOnline = registros.filter { it.origem == "dispositivo pareado" }
             Column(
-                modifier = Modifier.fillMaxSize().padding(24.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Center
+                modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 12.dp)
             ) {
-                Text("⇄", fontSize = 54.sp, color = Azul)
-                Spacer(modifier = Modifier.height(16.dp))
                 Text(
-                    "Histórico online indisponível",
-                    fontSize = 20.sp,
+                    "Histórico recebido do dispositivo pareado",
+                    fontSize = 18.sp,
                     fontWeight = FontWeight.Bold,
-                    color = TextoPrincipal,
-                    textAlign = TextAlign.Center
+                    color = TextoPrincipal
                 )
-                Spacer(modifier = Modifier.height(10.dp))
+                Spacer(modifier = Modifier.height(6.dp))
                 Text(
-                    "Você precisa se conectar a um dispositivo para ter acesso ao histórico online. A sincronização entre celulares ainda não está ativa.",
+                    "Os registros recebidos ficam armazenados localmente neste aparelho. O envio é sempre manual e exige autorização nos dois dispositivos.",
                     color = TextoSecundario,
-                    fontSize = 14.sp,
-                    textAlign = TextAlign.Center,
-                    lineHeight = 22.sp
+                    fontSize = 12.sp,
+                    lineHeight = 17.sp
                 )
-                Spacer(modifier = Modifier.height(18.dp))
-                Button(
-                    onClick = {
-                        // A conexão deve ser iniciada pela tela principal.
-                        voltar()
+                Spacer(modifier = Modifier.height(12.dp))
+                if (registrosOnline.isEmpty()) {
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            "Nenhuma mensagem recebida ainda.\nPareie os aparelhos, autorize o compartilhamento nos dois e envie as mensagens.",
+                            color = TextoSecundario,
+                            textAlign = TextAlign.Center
+                        )
                     }
-                ) {
-                    Text("Voltar e conectar dispositivo")
+                } else {
+                    LazyColumn(
+                        modifier = Modifier.fillMaxSize(),
+                        contentPadding = PaddingValues(bottom = 24.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        items(registrosOnline) { registro -> CartaoRegistro(registro) }
+                    }
                 }
             }
         }
@@ -733,7 +745,8 @@ private fun TelaPareamento(voltar: () -> Unit, abrirLeitor: () -> Unit) {
         Cabecalho("Pareamento P2P", voltar)
 
         Column(
-            modifier = Modifier.fillMaxSize().padding(horizontal = 24.dp, vertical = 20.dp),
+            modifier = Modifier.fillMaxSize().padding(horizontal = 24.dp, vertical = 20.dp)
+                .verticalScroll(rememberScrollState()),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Text(
@@ -850,7 +863,8 @@ private fun TelaLerQrCode(voltar: () -> Unit) {
         Cabecalho("Conectar dispositivo", voltar)
 
         Column(
-            modifier = Modifier.fillMaxSize().padding(horizontal = 24.dp, vertical = 16.dp),
+            modifier = Modifier.fillMaxSize().padding(horizontal = 24.dp, vertical = 16.dp)
+                .verticalScroll(rememberScrollState()),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Text("Conectar dispositivo", fontSize = 25.sp, fontWeight = FontWeight.Bold, color = TextoPrincipal)
@@ -968,6 +982,8 @@ private fun TelaLerQrCode(voltar: () -> Unit) {
                 TextButton(onClick = { coordinator.testDataChannel() }) {
                     Text("Testar canal de dados", color = Azul)
                 }
+                Spacer(modifier = Modifier.height(8.dp))
+                PainelSincronizacaoHistorico(context, coordinator)
             }
 
             Spacer(modifier = Modifier.height(12.dp))
