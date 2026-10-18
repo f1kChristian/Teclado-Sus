@@ -626,8 +626,6 @@ private fun CartaoRegistro(registro: RegistroHistorico) {
 }
 
 @Composable
-
-@Composable
 private fun PainelSincronizacaoHistorico(
     context: Context,
     coordinator: WebRtcPairingCoordinator
@@ -721,6 +719,7 @@ private fun PainelSincronizacaoHistorico(
     }
 }
 
+@Composable
 private fun TelaPareamento(voltar: () -> Unit, abrirLeitor: () -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
